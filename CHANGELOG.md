@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.0.2...v1.1.0) (2025-12-26)
+
+
+### Features
+
+* implement dynamic versioning, docs update, and mobile polish ([d1e1509](https://github.com/dbehnke/urfd-nng-dashboard/commit/d1e1509a3603fc3011e2de47f03b10fb2ee17521))
+
 ## [1.0.2](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.0.1...v1.0.2) (2025-12-26)
 
 
