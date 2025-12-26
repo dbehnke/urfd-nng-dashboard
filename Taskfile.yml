@@ -1,0 +1,75 @@
+version: "3"
+
+vars:
+  BIN_NAME: urfd-dashboard
+  SIM_NAME: urfd-simulator
+  WEB_DIR: web
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  # Backend Tasks
+  build-backend:
+    desc: Build the Go backend binary
+    deps: [sync-assets]
+    cmds:
+      - go build -o {{.BIN_NAME}} ./cmd/dashboard
+
+  build-simulator:
+    desc: Build the NNG simulator
+    cmds:
+      - go build -o {{.SIM_NAME}} ./cmd/simulator
+
+  sync-assets:
+    desc: Copy frontend assets to internal/assets/dist
+    cmds:
+      - rm -rf internal/assets/dist
+      - mkdir -p internal/assets/dist
+      - cp -r web/dist/* internal/assets/dist/
+
+  test-backend:
+    desc: Run backend tests
+    cmds:
+      - go test -v ./...
+
+  lint-backend:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  # Frontend Tasks
+  install-frontend:
+    desc: Install frontend dependencies using bun
+    cmds:
+      - cd {{.WEB_DIR}} && bun install
+
+  build-frontend:
+    desc: Build the frontend for production
+    cmds:
+      - cd {{.WEB_DIR}} && bun run build
+
+  dev-frontend:
+    desc: Start frontend development server
+    cmds:
+      - cd {{.WEB_DIR}} && bun run dev
+
+  test-frontend:
+    desc: Run frontend tests
+    cmds:
+      - cd {{.WEB_DIR}} && bun run test
+
+  # Full Build
+  build:
+    desc: Build full application (Frontend then Backend)
+    cmds:
+      - task: build-frontend
+      - task: build-backend
+
+  # CI/Release
+  package:
+    desc: Run GoReleaser locally (snapshot)
+    cmds:
+      - goreleaser release --snapshot --clean

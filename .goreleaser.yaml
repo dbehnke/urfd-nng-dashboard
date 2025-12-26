@@ -1,0 +1,88 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: dashboard
+    main: ./cmd/dashboard
+    binary: urfd-dashboard
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+  - id: simulator
+    main: ./cmd/simulator
+    binary: urfd-simulator
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - format: tar.gz
+    # this name template makes the OS and Arch compatible with what some people expect.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    # use zip for windows archives
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+nfpms:
+  - id: urfd-dashboard
+    package_name: urfd-dashboard
+    file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    homepage: https://github.com/dbehnke/urfd-nng-dashboard
+    maintainer: dbehnke <dbehnke@gmail.com>
+    description: URFD NNG Dashboard
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    contents:
+      - src: ./deploy/systemd/urfd-dashboard.service
+        dst: /usr/lib/systemd/system/urfd-dashboard.service
+    scripts:
+      postinstall: ./deploy/systemd/postinstall.sh
+
+dockers:
+  - image_templates:
+      - "ghcr.io/dbehnke/urfd-nng-dashboard:latest"
+      - "ghcr.io/dbehnke/urfd-nng-dashboard:{{ .Tag }}"
+    dockerfile: deploy/Dockerfile
+    build_flag_templates:
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"

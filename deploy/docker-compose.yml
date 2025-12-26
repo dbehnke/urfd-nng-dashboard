@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  dashboard:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - URFD_NNG_URL=tcp://urfd:5555
+    restart: unless-stopped
+    volumes:
+      - dashboard-data:/app/data
+
+volumes:
+  dashboard-data:

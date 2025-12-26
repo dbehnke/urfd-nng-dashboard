@@ -1,0 +1,24 @@
+# Binaries
+urfd-dashboard
+urfd-simulator
+
+# Data
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# Frontend
+web/node_modules
+web/dist
+web/.vite
+web/*.local
+
+# OS
+.DS_Store
+.idea
+.vscode
+*.swp
+
+# Logs
+*.log
