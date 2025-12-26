@@ -1,0 +1,11 @@
+# Changelog
+
+## 1.0.0 (2025-12-26)
+
+
+### Bug Fixes
+
+* **backend:** resolve errcheck lint errors ([04241a1](https://github.com/dbehnke/urfd-nng-dashboard/commit/04241a13e171c65b1916057b6cd44306b7bd65b7))
+* **ci:** use correct release-type 'go' for release-please ([0f1aefb](https://github.com/dbehnke/urfd-nng-dashboard/commit/0f1aefbd1b10cd230b7cf8463664d2fe86a02e2b))
+* **frontend:** add missing test script to package.json ([5a07f83](https://github.com/dbehnke/urfd-nng-dashboard/commit/5a07f83b8270fc1ed604a9eff72a32f5e71a62c0))
+* **simulator:** add missing Protocol field to ActiveTalker struct ([dae4cd3](https://github.com/dbehnke/urfd-nng-dashboard/commit/dae4cd359937b389006af13cfc07a5b3ae481574))
