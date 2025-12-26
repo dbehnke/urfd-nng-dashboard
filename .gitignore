@@ -4,6 +4,7 @@
 # Archives
 urfd-dashboard
 urfd-simulator
+dist/
 
 # Data
 data/*.db
