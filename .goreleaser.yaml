@@ -79,11 +79,13 @@ nfpms:
       postinstall: ./deploy/systemd/postinstall.sh
 
 dockers_v2:
-  - image_templates:
-      - "ghcr.io/dbehnke/urfd-nng-dashboard:latest"
-      - "ghcr.io/dbehnke/urfd-nng-dashboard:{{ .Tag }}"
+  - images:
+      - "ghcr.io/dbehnke/urfd-nng-dashboard"
+    tags:
+      - latest
+      - "{{ .Tag }}"
     dockerfile: deploy/Dockerfile
-    build_flags:
+    flags:
       - "--label=org.opencontainers.image.created={{.Date}}"
       - "--label=org.opencontainers.image.title={{.ProjectName}}"
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
