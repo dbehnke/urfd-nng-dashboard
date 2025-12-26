@@ -1,0 +1,1 @@
+function c(e){if(!e)return"-";const f=new Date,i=new Date(e),r=f.getTime()-i.getTime();if(r<0)return"Just now";const o=Math.floor(r/1e3),t=Math.floor(o/60),n=Math.floor(t/60),s=Math.floor(n/24);return s>0?`${s}d ${n%24}h`:n>0?`${n}h ${t%60}m`:t>0?`${t}m ${o%60}s`:`${o}s`}export{c as f};

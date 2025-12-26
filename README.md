@@ -37,69 +37,73 @@ The system consists of two main components bundled into a single binary:
 
 ### Building from Source
 
-The project uses [Task](https://taskfile.dev/) for build automation.
+The project uses [Task](https://taskfile.dev/) for automation.
 
 1. **Clone the repository**:
 
-    ```bash
-    git clone https://github.com/dbehnke/urfd-nng-dashboard.git
-    cd urfd-nng-dashboard
-    ```
+   ```bash
+   git clone https://github.com/dbehnke/urfd-nng-dashboard.git
+   cd urfd-nng-dashboard
+   ```
 
 2. **Build the project**:
-    This command builds the frontend assets and embeds them into the Go binary.
 
-    ```bash
-    task build
-    ```
+   ```bash
+   task build
+   ```
 
-    The output binary `urfd-dashboard` will be in the root directory.
+   This produces `urfd-dashboard` and `urfd-simulator` in the root directory.
 
 ### Configuration
 
-The dashboard accepts the following command-line flags:
+The dashboard is configured via `config.yaml` (default) or command-line flags.
 
-- `--nng-url`: The NNG URL to subscribe to (default: `tcp://127.0.0.1:5555`).
-- `--db`: Path to the SQLite database file (default: `data/dashboard.db`).
-- `--listen`: HTTP listen address (default: `:8080`).
+**Example `config.yaml`**:
 
-## Running
+```yaml
+server:
+  addr: ":8080"
+  nng_url: "tcp://127.0.0.1:5555"
+  db_path: "data/dashboard.db"
 
-### Manual
-
-```bash
-./urfd-dashboard --nng-url tcp://localhost:5555 --listen :8080
+reflector:
+  name: "My Reflector"
 ```
 
-### Docker Compose
+A full example is available in `examples/config.yaml`.
 
-A `docker-compose.yml` is provided in the `deploy/` directory.
+Run with specific config:
+
+```bash
+./urfd-dashboard --config my-config.yaml
+```
+
+## Deployment
+
+### Docker Compose (Recommended)
 
 ```bash
 cd deploy
+# Optionally create a config.yaml based on examples/config.yaml
 docker-compose up -d
 ```
 
 ### Systemd
 
-A sample service unit is provided in `deploy/systemd/urfd-dashboard.service`.
-
-1. Copy the binary to `/usr/local/bin/urfd-dashboard`.
-2. Copy the service file to `/etc/systemd/system/`.
-3. Enable and start the service:
-
-    ```bash
-    systemctl enable --now urfd-dashboard
-    ```
+A sample service unit is available in `deploy/systemd/urfd-dashboard.service`.
 
 ## Development
 
-### Backend Simulator
+### Simulator
 
-To test the dashboard without a live reflector, use the included simulator:
+To test without a live reflector:
 
 ```bash
-go run cmd/simulator/main.go --url tcp://127.0.0.1:5555
+# Build
+task build-simulator
+
+# Run (defaults to publishing on tcp://127.0.0.1:5555)
+./urfd-simulator
 ```
 
 ### Hot Reload

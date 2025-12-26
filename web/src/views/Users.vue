@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useReflectorStore } from '../stores/reflector'
+import { formatTimeSince } from '../utils/time'
 
 const reflector = useReflectorStore()
 </script>
@@ -30,7 +31,7 @@ const reflector = useReflectorStore()
               <span class="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-xs font-mono uppercase">{{ user.OnModule }}</span>
             </td>
             <td class="px-6 py-4 text-sm">{{ user.ViaPeer || '-' }}</td>
-            <td class="px-6 py-4 text-sm text-slate-500">{{ user.LastHeard || '-' }}</td>
+            <td class="px-6 py-4 text-sm text-slate-500">{{ formatTimeSince(user.LastHeard) }} ago</td>
           </tr>
           <tr v-if="reflector.users.length === 0">
             <td colspan="4" class="px-6 py-12 text-center text-slate-400 italic">No users currently active.</td>

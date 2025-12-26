@@ -4,6 +4,12 @@ vars:
   BIN_NAME: urfd-dashboard
   SIM_NAME: urfd-simulator
   WEB_DIR: web
+  GIT_VERSION:
+    sh: git describe --tags --always --dirty --match "v*" | sed 's/-g\([0-9a-f]\{7,\}\)/-\1/'
+  GIT_COMMIT:
+    sh: git rev-parse --short HEAD
+  BUILD_DATE:
+    sh: date -u +%Y-%m-%dT%H:%M:%SZ
 
 tasks:
   default:
@@ -16,7 +22,7 @@ tasks:
     desc: Build the Go backend binary
     deps: [sync-assets]
     cmds:
-      - go build -o {{.BIN_NAME}} ./cmd/dashboard
+      - go build -ldflags="-X main.Version={{.GIT_VERSION}} -X main.Commit={{.GIT_COMMIT}} -X main.Date={{.BUILD_DATE}}" -o {{.BIN_NAME}} ./cmd/dashboard
 
   build-simulator:
     desc: Build the NNG simulator

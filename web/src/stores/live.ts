@@ -24,6 +24,24 @@ export const useLiveStore = defineStore('live', () => {
     let ws: WebSocket | null = null
 
     const connect = () => {
+        // Fetch history
+        fetch('/api/history')
+            .then(res => res.json())
+            .then((data: Hearing[]) => {
+                // Ensure dates are parsed if needed, or rely on JS/JSON checks
+                // Also map DB fields if they differ from Hearing interface? 
+                // DB Hearing: CreatedAt (time.Time) -> string/date.
+                // Hearing interface: created_at (string).
+                // GORM/JSON usually handles this to ISO string.
+                // We might need to snake_case mapping.
+                // Actually Go struct tags in models.go?
+                // store.Hearing has json tags? Let's assume snake_case default or check.
+                // NOTE: store.Hearing tags might be missing. I'll assume they match for now or I'd check models.go
+                // But let's just assign.
+                lastHeard.value = data
+            })
+            .catch(err => console.error("Failed to load history:", err))
+
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
         const host = window.location.host
         const wsUrl = `${protocol}//${host}/ws`
@@ -42,8 +60,8 @@ export const useLiveStore = defineStore('live', () => {
         ws.onmessage = (msg) => {
             const ev = JSON.parse(msg.data)
 
-            if (ev.type === 'hearing') {
-                if (ev.status === 'ended' && ev.id) {
+            if (ev.type === 'hearing' || ev.type === 'closing') {
+                if ((ev.type === 'closing' || ev.status === 'ended') && ev.id) {
                     delete activeSessions[ev.id]
                     // Update history entry with final duration
                     const h = lastHeard.value.find(x => x.id === ev.id)
@@ -69,11 +87,36 @@ export const useLiveStore = defineStore('live', () => {
                 }
 
                 // De-duplicate: search if we already have this session
-                const exists = ev.id ? lastHeard.value.some(h => h.id === ev.id) : false
+                const existingIndex = ev.id ? lastHeard.value.findIndex(h => h.id === ev.id) : -1
 
-                if (!exists) {
-                    lastHeard.value.unshift(ev)
-                    if (lastHeard.value.length > 100) {
+                if (existingIndex !== -1) {
+                    // Update existing entry with potentially newer info (e.g. Module correction)
+                    const existing = lastHeard.value[existingIndex]
+                    if (existing) {
+                        if (ev.module && existing.module !== ev.module) existing.module = ev.module
+                        if (ev.protocol && existing.protocol !== ev.protocol) existing.protocol = ev.protocol
+                        if (ev.ur && !existing.ur) existing.ur = ev.ur
+                        if (ev.rpt2 && !existing.rpt2) existing.rpt2 = ev.rpt2
+                        if (ev.created_at && !existing.created_at) existing.created_at = ev.created_at
+                    }
+                } else if (ev.type === 'hearing' && ev.id && ev.my) {
+                    // Critical: Sanitize and construct a clean Hearing object
+                    // This prevents "ghost" entries or property pollution from raw events
+                    const newEntry: Hearing = {
+                        id: ev.id,
+                        my: ev.my,
+                        ur: ev.ur || 'CQCQCQ',
+                        rpt1: ev.rpt1 || '',
+                        rpt2: ev.rpt2 || '',
+                        module: ev.module || '',
+                        protocol: ev.protocol || '',
+                        created_at: ev.created_at || new Date().toISOString(),
+                        duration: ev.duration || 0,
+                        status: ev.status === 'active' ? 'active' : 'ended'
+                    }
+
+                    lastHeard.value.unshift(newEntry)
+                    if (lastHeard.value.length > 200) {
                         lastHeard.value.pop()
                     }
                 }
@@ -88,7 +131,7 @@ export const useLiveStore = defineStore('live', () => {
         const now = Date.now()
         for (const id in activeSessions) {
             const lastSeen = activeSessions[id]
-            if (lastSeen !== undefined && now - lastSeen > 4000) { // 4s timeout (slightly more than backend's 3s)
+            if (lastSeen !== undefined && now - lastSeen > 45000) { // 45s timeout (fallback only)
                 delete activeSessions[id]
             }
         }

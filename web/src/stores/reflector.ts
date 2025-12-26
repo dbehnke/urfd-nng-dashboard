@@ -21,16 +21,23 @@ export interface Peer {
     ConnectTime: string
 }
 
+export interface Module {
+    Name: string
+    Description: string
+}
+
 export const useReflectorStore = defineStore('reflector', () => {
     const clients = ref<Client[]>([])
     const users = ref<User[]>([])
     const peers = ref<Peer[]>([])
+    const modules = ref<Module[]>([])
     const config = ref<Record<string, any>>({})
 
     const updateState = (state: any) => {
         if (state.Clients) clients.value = state.Clients
         if (state.Users) users.value = state.Users
         if (state.Peers) peers.value = state.Peers
+        if (state.Modules) modules.value = state.Modules
         if (state.Configure) config.value = state.Configure
     }
 
@@ -41,5 +48,5 @@ export const useReflectorStore = defineStore('reflector', () => {
         // We can also handle client_connect/disconnect incrementally here
     }
 
-    return { clients, users, peers, config, handleEvent }
+    return { clients, users, peers, modules, config, handleEvent }
 })

@@ -85,18 +85,18 @@ func main() {
 		users[call] = &UserState{
 			Callsign:  call,
 			Module:    string(rune('A' + rand.Intn(3))),
-			LastHeard: time.Now().Add(-time.Duration(rand.Intn(60)) * time.Minute),
+			LastHeard: time.Now().UTC().Add(-time.Duration(rand.Intn(60)) * time.Minute),
 		}
 	}
 
 	// Initialize some nodes
 	for i := 1; i <= 5; i++ {
-		call := "NODE" + realCalls[i%len(realCalls)] // Use some variety
+		call := realCalls[i%len(realCalls)]
 		nodes[call] = &NodeState{
 			Callsign:    call,
 			Protocol:    "DMR",
 			Module:      string(rune('A' + rand.Intn(3))),
-			ConnectTime: time.Now().Add(-time.Duration(rand.Intn(100)) * time.Minute),
+			ConnectTime: time.Now().UTC().Add(-time.Duration(rand.Intn(100)) * time.Minute),
 		}
 	}
 
@@ -110,7 +110,7 @@ func main() {
 			log.Println("Simulation finished.")
 			return
 		case <-ticker.C:
-			now := time.Now()
+			now := time.Now().UTC()
 
 			// Manage each module independently
 			for _, m := range modules {
@@ -118,12 +118,10 @@ func main() {
 				case StateTalking:
 					if now.After(m.ActiveTalker.EndTime) {
 						log.Printf("Module %s: Talker %s unkeyed", m.Name, m.ActiveTalker.Callsign)
+						sendClosing(sock, m.Name, m.ActiveTalker.Callsign, m.ActiveTalker.Protocol)
 						m.ActiveTalker = nil
 						m.State = StatePostTxGap
 						m.NextEvent = now.Add(time.Duration(2+rand.Intn(5)) * time.Second)
-					} else {
-						sendHearing(sock, m.Name, m.ActiveTalker.Callsign, m.ActiveTalker.Protocol)
-						users[m.ActiveTalker.Callsign].LastHeard = now
 					}
 
 				case StatePostTxGap:
@@ -155,7 +153,7 @@ func main() {
 					delete(nodes, dropCall)
 					log.Printf("Node %s disconnected", dropCall)
 				} else {
-					call := realCalls[rand.Intn(len(realCalls))] + "-N"
+					call := realCalls[rand.Intn(len(realCalls))]
 					nodes[call] = &NodeState{
 						Callsign:    call,
 						Protocol:    "D-Extra",
@@ -225,6 +223,19 @@ func sendHearing(sock mangos.Socket, module, callsign, protocol string) {
 	}
 }
 
+func sendClosing(sock mangos.Socket, module, callsign, protocol string) {
+	ev := nng.Event{
+		Type:     "closing",
+		Module:   module,
+		Protocol: protocol,
+		My:       callsign,
+	}
+	data, _ := json.Marshal(ev)
+	if err := sock.Send(data); err != nil {
+		log.Printf("Failed to send closing: %v", err)
+	}
+}
+
 func sendState(sock mangos.Socket, nodes map[string]*NodeState, users map[string]*UserState) {
 	ev := nng.Event{
 		Type: "state",
@@ -248,8 +259,18 @@ func sendState(sock mangos.Socket, nodes map[string]*NodeState, users map[string
 	ev.Peers = append(ev.Peers, nng.Peer{
 		Callsign:    "XLX262",
 		Protocol:    "D-Extra",
-		ConnectTime: time.Now().Add(-24 * time.Hour),
+		ConnectTime: time.Now().UTC().Add(-24 * time.Hour),
 	})
+
+	// Sample Modules
+	ev.Modules = []nng.Module{
+		{Name: "A", Description: "International / Primary"},
+		{Name: "B", Description: "Local Chat / Secondary"},
+		{Name: "C", Description: "Technical Discussions"},
+		{Name: "D", Description: "Data & Testing"},
+		{Name: "E", Description: "Emergency / Weather"},
+	}
+
 	data, _ := json.Marshal(ev)
 	if err := sock.Send(data); err != nil {
 		log.Printf("Failed to send state: %v", err)

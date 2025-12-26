@@ -43,5 +43,44 @@ export const useThemeStore = defineStore('theme', () => {
         else mode.value = 'light'
     }
 
-    return { mode, isDark, toggleMode }
+    const sidebarOpen = ref(window.innerWidth > 1280) // Default open on XL screens
+
+    // Config State
+    interface AppConfig {
+        version: string
+        commit: string
+        date: string
+        reflector: {
+            name: string
+            description: string
+        }
+    }
+
+    const config = ref<AppConfig>({
+        version: 'dev',
+        commit: 'none',
+        date: 'unknown',
+        reflector: {
+            name: 'URFD Dashboard',
+            description: 'Universal Reflector'
+        }
+    })
+
+    const fetchConfig = async () => {
+        try {
+            const res = await fetch('/api/config')
+            if (res.ok) {
+                config.value = await res.json()
+                document.title = config.value.reflector.name
+            }
+        } catch (e) {
+            console.error("Failed to fetch config", e)
+        }
+    }
+
+    const toggleSidebar = () => {
+        sidebarOpen.value = !sidebarOpen.value
+    }
+
+    return { mode, isDark, toggleMode, sidebarOpen, toggleSidebar, config, fetchConfig }
 })

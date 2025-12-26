@@ -12,6 +12,7 @@ services:
     restart: unless-stopped
     volumes:
       - dashboard-data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
 
 volumes:
   dashboard-data:

@@ -1,4 +1,7 @@
-# Binaries
+# Local Config
+/config.yaml
+
+# Archives
 urfd-dashboard
 urfd-simulator
 

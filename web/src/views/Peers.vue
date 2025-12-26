@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useReflectorStore } from '../stores/reflector'
+import { formatTimeSince } from '../utils/time'
 
 const reflector = useReflectorStore()
 </script>
@@ -26,7 +27,7 @@ const reflector = useReflectorStore()
           <tr v-for="peer in reflector.peers" :key="peer.Callsign" class="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
             <td class="px-6 py-4 font-bold text-blue-600 dark:text-blue-400">{{ peer.Callsign }}</td>
             <td class="px-6 py-4 text-sm">{{ peer.Protocol }}</td>
-            <td class="px-6 py-4 text-sm text-slate-500">{{ peer.ConnectTime || '-' }}</td>
+            <td class="px-6 py-4 text-sm text-slate-500">{{ formatTimeSince(peer.ConnectTime) }} ago</td>
           </tr>
           <tr v-if="reflector.peers.length === 0">
             <td colspan="3" class="px-6 py-12 text-center text-slate-400 italic">No peer reflectors linked.</td>

@@ -10,6 +10,11 @@ builds:
     binary: urfd-dashboard
     env:
       - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+      - -X main.Commit={{.Commit}}
+      - -X main.Date={{.Date}}
     goos:
       - linux
       - darwin
@@ -23,6 +28,11 @@ builds:
     binary: urfd-simulator
     env:
       - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+      - -X main.Commit={{.Commit}}
+      - -X main.Date={{.Date}}
     goos:
       - linux
       - darwin

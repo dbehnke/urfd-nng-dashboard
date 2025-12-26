@@ -1,0 +1,33 @@
+# URFD Dashboard Configuration
+# Copy this file to config.yaml and adjust as needed
+
+server:
+  # The address the HTTP server listens on
+  addr: ":8080"
+
+  # The NNG URL of the URFD reflector (or simulator)
+  nng_url: "tcp://127.0.0.1:5555"
+
+  # Path to the SQLite database
+  db_path: "data/dashboard.db"
+
+reflector:
+  # Display name for the dashboard header
+  name: "URFD Dashboard"
+
+  # Description shown below the name
+  description: "Universal Reflector Dashboard"
+
+logging:
+  # Log level (debug, info, warn, error, fatal)
+  level: "info"
+
+  # Log to console
+  console: true
+
+  # Log to file (optional)
+  # file_path: "logs/dashboard.log"
+  # max_size_mb: 10
+  # max_backups: 3
+  # max_age_days: 28
+  # compress: true

@@ -7,9 +7,9 @@ import (
 
 func TestParseEvent(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		wantErr bool
+		name     string
+		input    string
+		wantErr  bool
 		validate func(e *Event) bool
 	}{
 		{
@@ -24,6 +24,13 @@ func TestParseEvent(t *testing.T) {
 			input: `{"type": "hearing", "my": "G4XYZ", "module": "A"}`,
 			validate: func(e *Event) bool {
 				return e.Type == "hearing" && e.My == "G4XYZ" && e.Module == "A"
+			},
+		},
+		{
+			name:  "Closing Event",
+			input: `{"type": "closing", "my": "G4XYZ", "module": "A", "protocol": "M17"}`,
+			validate: func(e *Event) bool {
+				return e.Type == "closing" && e.My == "G4XYZ" && e.Module == "A" && e.Protocol == "M17"
 			},
 		},
 		{
