@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.1](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.0.0...v1.0.1) (2025-12-26)
+
+
+### Bug Fixes
+
+* **ci:** resolve goreleaser deprecated fields (dockers_v2, formats) ([228bbd4](https://github.com/dbehnke/urfd-nng-dashboard/commit/228bbd48d79b90e190992b70b6a75b8ae5542d66))
+* **ci:** resolve goreleaser deprecated fields (dockers_v2, formats) ([9d59348](https://github.com/dbehnke/urfd-nng-dashboard/commit/9d593480f099385ef3b80d69cbdd4af6308d4090))
+
 ## 1.0.0 (2025-12-26)
 
 
