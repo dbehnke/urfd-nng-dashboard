@@ -32,7 +32,8 @@ builds:
       - arm64
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
     # this name template makes the OS and Arch compatible with what some people expect.
     name_template: >-
       {{ .ProjectName }}_
@@ -44,13 +45,14 @@ archives:
     # use zip for windows archives
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
 
 checksum:
   name_template: "checksums.txt"
 
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-next"
 
 changelog:
   sort: asc
@@ -76,12 +78,12 @@ nfpms:
     scripts:
       postinstall: ./deploy/systemd/postinstall.sh
 
-dockers:
+dockers_v2:
   - image_templates:
       - "ghcr.io/dbehnke/urfd-nng-dashboard:latest"
       - "ghcr.io/dbehnke/urfd-nng-dashboard:{{ .Tag }}"
     dockerfile: deploy/Dockerfile
-    build_flag_templates:
+    build_flags:
       - "--label=org.opencontainers.image.created={{.Date}}"
       - "--label=org.opencontainers.image.title={{.ProjectName}}"
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
