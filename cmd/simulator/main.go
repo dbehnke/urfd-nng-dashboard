@@ -41,6 +41,7 @@ const (
 
 type ActiveTalker struct {
 	Callsign string
+	Protocol string
 	EndTime  time.Time
 }
 
