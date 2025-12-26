@@ -84,12 +84,12 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 func (c *Client) WritePump() {
 	defer func() {
 		c.Hub.Unregister <- c
-		c.Conn.Close()
+		_ = c.Conn.Close()
 	}()
 	for message := range c.Send {
 		if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
 			return
 		}
 	}
-	c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+	_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 }

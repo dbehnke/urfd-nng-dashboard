@@ -62,7 +62,11 @@ func main() {
 	if err := sock.Listen(*url); err != nil {
 		log.Fatalf("Failed to listen on %s: %v", *url, err)
 	}
-	defer sock.Close()
+	defer func() {
+		if err := sock.Close(); err != nil {
+			log.Printf("Failed to close socket: %v", err)
+		}
+	}()
 
 	log.Printf("Simulator started on %s for %v", *url, *duration)
 
@@ -216,7 +220,9 @@ func sendHearing(sock mangos.Socket, module, callsign, protocol string) {
 		Rpt2:     "URFD " + module,
 	}
 	data, _ := json.Marshal(ev)
-	sock.Send(data)
+	if err := sock.Send(data); err != nil {
+		log.Printf("Failed to send hearing: %v", err)
+	}
 }
 
 func sendState(sock mangos.Socket, nodes map[string]*NodeState, users map[string]*UserState) {
@@ -245,5 +251,7 @@ func sendState(sock mangos.Socket, nodes map[string]*NodeState, users map[string
 		ConnectTime: time.Now().Add(-24 * time.Hour),
 	})
 	data, _ := json.Marshal(ev)
-	sock.Send(data)
+	if err := sock.Send(data); err != nil {
+		log.Printf("Failed to send state: %v", err)
+	}
 }

@@ -78,50 +78,54 @@ func main() {
 	}
 
 	// 4. Listen for events
-	go sub.Listen(func(ev nng.Event) {
-		// Log hearing events to DB (Session-aware)
-		if ev.Type == "hearing" {
-			sessKey := ev.My + ":" + ev.Module
-			sessMu.Lock()
-			sess, exists := sessions[sessKey]
-			if !exists {
-				h := store.Hearing{
-					My:       ev.My,
-					Ur:       ev.Ur,
-					Rpt1:     ev.Rpt1,
-					Rpt2:     ev.Rpt2,
-					Module:   ev.Module,
-					Protocol: ev.Protocol,
+	go func() {
+		if err := sub.Listen(func(ev nng.Event) {
+			// Log hearing events to DB (Session-aware)
+			if ev.Type == "hearing" {
+				sessKey := ev.My + ":" + ev.Module
+				sessMu.Lock()
+				sess, exists := sessions[sessKey]
+				if !exists {
+					h := store.Hearing{
+						My:       ev.My,
+						Ur:       ev.Ur,
+						Rpt1:     ev.Rpt1,
+						Rpt2:     ev.Rpt2,
+						Module:   ev.Module,
+						Protocol: ev.Protocol,
+					}
+					if err := s.DB.Create(&h).Error; err != nil {
+						log.Printf("Failed to save hearing: %v", err)
+					}
+					sess = &ActiveSession{
+						ID:        h.ID,
+						Protocol:  h.Protocol,
+						StartTime: h.CreatedAt,
+						LastSeen:  time.Now(),
+					}
+					sessions[sessKey] = sess
+				} else {
+					sess.LastSeen = time.Now()
 				}
-				if err := s.DB.Create(&h).Error; err != nil {
-					log.Printf("Failed to save hearing: %v", err)
-				}
-				sess = &ActiveSession{
-					ID:        h.ID,
-					Protocol:  h.Protocol,
-					StartTime: h.CreatedAt,
-					LastSeen:  time.Now(),
-				}
-				sessions[sessKey] = sess
-			} else {
-				sess.LastSeen = time.Now()
+				ev.ID = sess.ID
+				ev.Protocol = sess.Protocol
+				ev.CreatedAt = sess.StartTime
+				ev.Status = "active"
+				sessMu.Unlock()
 			}
-			ev.ID = sess.ID
-			ev.Protocol = sess.Protocol
-			ev.CreatedAt = sess.StartTime
-			ev.Status = "active"
-			sessMu.Unlock()
-		}
 
-		if ev.Type == "state" {
-			stateMu.Lock()
-			lastState = ev
-			stateMu.Unlock()
-		}
+			if ev.Type == "state" {
+				stateMu.Lock()
+				lastState = ev
+				stateMu.Unlock()
+			}
 
-		// Broadcast all events to Websocket
-		hub.BroadcastJSON(ev)
-	})
+			// Broadcast all events to Websocket
+			hub.BroadcastJSON(ev)
+		}); err != nil {
+			log.Printf("NNG subscriber failed: %v", err)
+		}
+	}()
 
 	// 5. Start HTTP Server
 	srv := server.NewServer(hub, assets.GetAssets())

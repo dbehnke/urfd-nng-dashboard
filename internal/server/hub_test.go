@@ -25,7 +25,7 @@ func TestHub(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dial failed: %v", err)
 	}
-	defer ws.Close()
+	defer func() { _ = ws.Close() }()
 
 	// Test Broadcast
 	msg := map[string]string{"type": "test"}

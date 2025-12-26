@@ -7,9 +7,9 @@ import (
 
 func TestStore(t *testing.T) {
 	dbPath := "test.db"
-	defer os.Remove(dbPath)
-	defer os.Remove(dbPath + "-shm")
-	defer os.Remove(dbPath + "-wal")
+	defer func() { _ = os.Remove(dbPath) }()
+	defer func() { _ = os.Remove(dbPath + "-shm") }()
+	defer func() { _ = os.Remove(dbPath + "-wal") }()
 
 	s, err := NewStore(dbPath)
 	if err != nil {
