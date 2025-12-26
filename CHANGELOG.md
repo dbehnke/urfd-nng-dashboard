@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.0.1...v1.0.2) (2025-12-26)
+
+
+### Bug Fixes
+
+* **ci:** temporarily disable dockers_v2 to bypass buildx driver issues ([a15a21b](https://github.com/dbehnke/urfd-nng-dashboard/commit/a15a21b13f603314524ace0a16142ac7d23c3c02))
+
 ## [1.0.1](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.0.0...v1.0.1) (2025-12-26)
 
 
