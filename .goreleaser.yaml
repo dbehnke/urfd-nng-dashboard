@@ -77,16 +77,3 @@ nfpms:
         dst: /usr/lib/systemd/system/urfd-dashboard.service
     scripts:
       postinstall: ./deploy/systemd/postinstall.sh
-
-dockers_v2:
-  - images:
-      - "ghcr.io/dbehnke/urfd-nng-dashboard"
-    tags:
-      - latest
-      - "{{ .Tag }}"
-    dockerfile: deploy/Dockerfile
-    flags:
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
