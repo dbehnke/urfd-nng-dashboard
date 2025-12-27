@@ -26,14 +26,18 @@ var (
 )
 
 func main() {
-	configFile := flag.String("config", "config.yaml", "Path to configuration file")
+	configPath := flag.String("config", "config.yaml", "Path to configuration file")
 	flag.Parse()
 
-	// 1. Load Configuration
-	cfg, err := config.LoadConfig(*configFile)
+	// 3. Load Config
+	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
-		panic("Failed to load configuration: " + err.Error())
+		logger.Log.Fatal("Failed to load config", zap.String("path", *configPath), zap.Error(err))
 	}
+	logger.Log.Info("Config loaded",
+		zap.String("reflector_name", cfg.Reflector.Name),
+		zap.Int("configured_modules", len(cfg.Reflector.Modules)),
+	)
 
 	// 2. Initialize Logger
 	logCfg := logger.Config{
