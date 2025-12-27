@@ -13,15 +13,17 @@ const displayModules = computed(() => {
 
   // Add from config
   for (const [name, desc] of Object.entries(configModules)) {
-    allModules.set(name, { Name: name, Description: desc })
+    const upperName = name.toUpperCase()
+    allModules.set(upperName, { Name: upperName, Description: desc })
   }
 
-  // 2. Add/Refresh from dynamic NNG state
+  // 2. Add/Refresh from dynamic NNG state (which should be uppercase already, but we'll ensure)
   for (const m of reflector.modules) {
+    const upperName = m.Name.toUpperCase()
     // Dynamic Description wins only if config entry is missing (or we prefer config override)
     // Actually, config override should win.
-    const desc = configModules[m.Name] || m.Description
-    allModules.set(m.Name, { Name: m.Name, Description: desc })
+    const desc = configModules[m.Name] || configModules[upperName] || m.Description
+    allModules.set(upperName, { Name: upperName, Description: desc })
   }
 
   // Convert to array and sort
@@ -29,7 +31,8 @@ const displayModules = computed(() => {
 })
 
 const getUserCount = (moduleName: string) => {
-  return reflector.users.filter(u => u.OnModule === moduleName).length
+  // Use clients (active connections) instead of users (last heard)
+  return reflector.clients.filter(c => c.OnModule === moduleName).length
 }
 </script>
 
