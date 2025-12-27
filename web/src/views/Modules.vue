@@ -17,8 +17,6 @@ const displayModules = computed(() => {
   }
 
   // 2. Add/Refresh from dynamic NNG state
-  for (const m of reflector.modules) {
-    const existing = allModules.get(m.Name)
     // Dynamic Description wins only if config entry is missing (or we prefer config override)
     // Actually, config override should win.
     const desc = configModules[m.Name] || m.Description
