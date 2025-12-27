@@ -1,12 +1,38 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useReflectorStore } from '../stores/reflector'
 import { useThemeStore } from '../stores/theme'
 
 const reflector = useReflectorStore()
 const theme = useThemeStore()
 
+const displayModules = computed(() => {
+  // 1. Start with configured modules
+  const configModules = theme.config.reflector.modules || {}
+  const allModules = new Map<string, { Name: string, Description: string }>()
+
+  // Add from config
+  for (const [name, desc] of Object.entries(configModules)) {
+    const upperName = name.toUpperCase()
+    allModules.set(upperName, { Name: upperName, Description: desc })
+  }
+
+  // 2. Add/Refresh from dynamic NNG state (which should be uppercase already, but we'll ensure)
+  for (const m of reflector.modules) {
+    const upperName = m.Name.toUpperCase()
+    // Dynamic Description wins only if config entry is missing (or we prefer config override)
+    // Actually, config override should win.
+    const desc = configModules[m.Name] || configModules[upperName] || m.Description
+    allModules.set(upperName, { Name: upperName, Description: desc })
+  }
+
+  // Convert to array and sort
+  return Array.from(allModules.values()).sort((a, b) => a.Name.localeCompare(b.Name))
+})
+
 const getUserCount = (moduleName: string) => {
-  return reflector.users.filter(u => u.OnModule === moduleName).length
+  // Use clients (active connections) instead of users (last heard)
+  return reflector.clients.filter(c => c.OnModule === moduleName).length
 }
 </script>
 
@@ -29,14 +55,14 @@ const getUserCount = (moduleName: string) => {
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-          <tr v-for="m in reflector.modules" :key="m.Name" class="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors group">
+          <tr v-for="m in displayModules" :key="m.Name" class="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors group">
             <td class="px-8 py-5">
               <div class="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-blue-500/20">
                 {{ m.Name }}
               </div>
             </td>
             <td class="px-8 py-5 text-slate-500 dark:text-slate-400">
-              {{ theme.config.reflector.modules?.[m.Name] || m.Description || 'No description available' }}
+              {{ m.Description || 'No description available' }}
             </td>
             <td class="px-8 py-5 text-center">
               <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-bold transition-all duration-300"
@@ -49,7 +75,7 @@ const getUserCount = (moduleName: string) => {
             </td>
           </tr>
           
-          <tr v-if="reflector.modules.length === 0">
+          <tr v-if="displayModules.length === 0">
             <td colspan="3" class="px-8 py-20 text-center text-slate-400 italic bg-white dark:bg-slate-900">
               <div class="mb-4 opacity-50">
                 <svg class="w-12 h-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
