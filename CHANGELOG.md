@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.2.1...v1.3.0) (2025-12-27)
+
+
+### Features
+
+* improve config loading error handling with structured logging and add success messages ([c46ea33](https://github.com/dbehnke/urfd-nng-dashboard/commit/c46ea33e3053178bd00cd462330cc3f29dba190a))
+
 ## [1.2.1](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.2.0...v1.2.1) (2025-12-27)
 
 
