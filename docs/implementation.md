@@ -7,23 +7,23 @@ The URFD NNG Dashboard is a real-time monitoring solution for Universal Reflecto
 
 ```mermaid
 graph TD
-    Reflector[URFD Reflector / Simulator] -- NNG (TCP) --> Backend[Dashboard Backend (Go)]
+    Reflector["URFD Reflector / Simulator"] -- "NNG (TCP)" --> Backend["Dashboard Backend (Go)"]
     
-    subgraph Backend Services
-        Listener[NNG Listener]
-        Store[SQLite Database]
-        Hub[WebSocket Hub]
-        HTTPServer[HTTP Server]
+    subgraph BackendServices ["Backend Services"]
+        Listener["NNG Listener"]
+        Store["SQLite Database"]
+        Hub["WebSocket Hub"]
+        HTTPServer["HTTP Server"]
         
         Listener -->|Events| Hub
         Listener -->|Persist| Store
         Store -->|History| HTTPServer
     end
     
-    Backend -- WebSocket --> Frontend[Vue 3 Frontend]
-    Backend -- JSON API --> Frontend
+    Backend -- WebSocket --> Frontend["Vue 3 Frontend"]
+    Backend -- "JSON API" --> Frontend
     
-    Frontend -->|View| Browser[User Browser]
+    Frontend -->|View| Browser["User Browser"]
 ```
 
 ## Components
