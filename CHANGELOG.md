@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.2.0...v1.2.1) (2025-12-27)
+
+
+### Bug Fixes
+
+* **docker:** ensure frontend assets are embedded ([#6](https://github.com/dbehnke/urfd-nng-dashboard/issues/6)) ([abb6f5c](https://github.com/dbehnke/urfd-nng-dashboard/commit/abb6f5ce252281554cdeeb90e3b5f41b951ed05b))
+
 ## [1.2.0](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.1.0...v1.2.0) (2025-12-27)
 
 
