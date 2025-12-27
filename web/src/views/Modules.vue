@@ -1,3 +1,4 @@
+<script setup lang="ts">
 import { computed } from 'vue'
 import { useReflectorStore } from '../stores/reflector'
 import { useThemeStore } from '../stores/theme'
