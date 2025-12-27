@@ -13,7 +13,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-COPY --from=frontend-builder /app/web/dist ./web/dist
+COPY --from=frontend-builder /app/web/dist ./internal/assets/dist
 RUN GIT_VERSION=$(git describe --tags --always --dirty --match "v*" | sed 's/-g\([0-9a-f]\{7,\}\)/-\1/') && \
     GIT_COMMIT=$(git rev-parse --short HEAD) && \
     BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) && \
