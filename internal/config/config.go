@@ -19,8 +19,9 @@ type ServerConfig struct {
 }
 
 type ReflectorConfig struct {
-	Name        string `mapstructure:"name" json:"name"`
-	Description string `mapstructure:"description" json:"description"`
+	Name        string            `mapstructure:"name" json:"name"`
+	Description string            `mapstructure:"description" json:"description"`
+	Modules     map[string]string `mapstructure:"modules" json:"modules"`
 }
 
 type LoggingConfig struct {

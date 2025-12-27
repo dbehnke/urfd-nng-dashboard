@@ -18,6 +18,13 @@ reflector:
   # Description shown below the name
   description: "Universal Reflector Dashboard"
 
+  # Optional: Override module descriptions
+  modules:
+    "A": "World Wide"
+    "B": "Regional"
+    "C": "Local"
+    "D": "Links"
+
 logging:
   # Log level (debug, info, warn, error, fatal)
   level: "info"

@@ -53,6 +53,7 @@ export const useThemeStore = defineStore('theme', () => {
         reflector: {
             name: string
             description: string
+            modules?: Record<string, string>
         }
     }
 

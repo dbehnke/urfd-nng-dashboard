@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { useReflectorStore } from '../stores/reflector'
+import { useThemeStore } from '../stores/theme'
 
 const reflector = useReflectorStore()
+const theme = useThemeStore()
 
 const getUserCount = (moduleName: string) => {
   return reflector.users.filter(u => u.OnModule === moduleName).length
@@ -34,7 +36,7 @@ const getUserCount = (moduleName: string) => {
               </div>
             </td>
             <td class="px-8 py-5 text-slate-500 dark:text-slate-400">
-              {{ m.Description || 'No description available' }}
+              {{ theme.config.reflector.modules?.[m.Name] || m.Description || 'No description available' }}
             </td>
             <td class="px-8 py-5 text-center">
               <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-bold transition-all duration-300"

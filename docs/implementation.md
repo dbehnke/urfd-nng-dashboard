@@ -40,6 +40,7 @@ graph TD
 - **Real-time Updates**: Reflects state changes instantly via WebSockets.
 - **Responsive Design**: Full support for Mobile, Tablet, and Desktop.
 - **Themes**: Dark/Light mode support.
+- **Configurable Metadata**: Module descriptions defined in `config.yaml` overlay dynamic data.
 
 ## Configuration
 
