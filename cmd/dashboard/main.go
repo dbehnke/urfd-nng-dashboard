@@ -32,12 +32,8 @@ func main() {
 	// 3. Load Config
 	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
-		logger.Log.Fatal("Failed to load config", zap.String("path", *configPath), zap.Error(err))
+		panic("Failed to load config: " + err.Error())
 	}
-	logger.Log.Info("Config loaded",
-		zap.String("reflector_name", cfg.Reflector.Name),
-		zap.Int("configured_modules", len(cfg.Reflector.Modules)),
-	)
 
 	// 2. Initialize Logger
 	logCfg := logger.Config{
@@ -52,6 +48,10 @@ func main() {
 	if err := logger.Init(logCfg); err != nil {
 		panic("Failed to initialize logger: " + err.Error())
 	}
+	logger.Log.Info("Config loaded",
+		zap.String("reflector_name", cfg.Reflector.Name),
+		zap.Int("configured_modules", len(cfg.Reflector.Modules)),
+	)
 	defer logger.Sync()
 
 	logger.Log.Info("Starting URFD Dashboard",
