@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.1.0...v1.2.0) (2025-12-27)
+
+
+### Features
+
+* implement configurable module descriptions ([4b4db1f](https://github.com/dbehnke/urfd-nng-dashboard/commit/4b4db1fe1379e414d031e96bdbef7b4db2182b04))
+
+
+### Bug Fixes
+
+* docker build, mermaid diagram, and typescript shim ([a71debf](https://github.com/dbehnke/urfd-nng-dashboard/commit/a71debfd2d9eb22ec93793ade6078ec1fe6f53d7))
+
 ## [1.1.0](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.0.2...v1.1.0) (2025-12-26)
 
 
