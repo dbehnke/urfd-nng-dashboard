@@ -13,6 +13,7 @@ export interface Hearing {
     created_at: string
     duration?: number
     status?: 'active' | 'ended'
+    audio_file?: string
 }
 
 export const useLiveStore = defineStore('live', () => {
@@ -112,7 +113,8 @@ export const useLiveStore = defineStore('live', () => {
                         protocol: ev.protocol || '',
                         created_at: ev.created_at || new Date().toISOString(),
                         duration: ev.duration || 0,
-                        status: ev.status === 'active' ? 'active' : 'ended'
+                        status: ev.status === 'active' ? 'active' : 'ended',
+                        audio_file: ev.recording || ev.audio_file // Accept both from event or history
                     }
 
                     lastHeard.value.unshift(newEntry)

@@ -113,6 +113,12 @@ const clearFilters = () => {
   filterText.value = ''
   moduleFilter.value = ''
 }
+
+const playAudio = (file: string) => {
+  if (!file) return
+  const audio = new Audio(`/audio/${file}`)
+  audio.play().catch(e => console.error("Audio playback failed", e))
+}
 </script>
 
 <template>
@@ -224,6 +230,7 @@ const clearFilters = () => {
               <th class="px-6 py-4 font-medium text-slate-500 text-sm text-center">Module</th>
               <th class="px-6 py-4 font-medium text-slate-500 text-sm">Route</th>
               <th class="px-6 py-4 font-medium text-slate-500 text-sm">Protocol</th>
+              <th class="px-6 py-4 font-medium text-slate-500 text-sm text-center">Audio</th>
               <th class="px-6 py-4 font-medium text-slate-500 text-sm text-right">Duration</th>
             </tr>
           </thead>
@@ -256,6 +263,13 @@ const clearFilters = () => {
                       :class="live.isSessionActive(entry.id) ? 'bg-red-500 text-white' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400'">
                   {{ entry.protocol }}
                 </span>
+              </td>
+              <td class="px-6 py-4 text-center">
+                 <button v-if="entry.audio_file" @click="playAudio(entry.audio_file)" 
+                         class="p-1.5 rounded-full hover:bg-blue-100 text-blue-600 dark:hover:bg-blue-900/40 dark:text-blue-400 transition-colors"
+                         title="Play Recording">
+                   <Play :size="16" class="fill-current" />
+                 </button>
               </td>
               <td class="px-6 py-4 text-sm font-mono text-right" :class="live.isSessionActive(entry.id) ? 'text-red-600 font-bold' : 'text-slate-500'">
                 {{ getDurationDisplay(entry) }}

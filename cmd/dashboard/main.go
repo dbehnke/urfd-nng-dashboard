@@ -32,12 +32,8 @@ func main() {
 	// 3. Load Config
 	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
-		logger.Log.Fatal("Failed to load config", zap.String("path", *configPath), zap.Error(err))
+		panic("Failed to load config: " + err.Error())
 	}
-	logger.Log.Info("Config loaded",
-		zap.String("reflector_name", cfg.Reflector.Name),
-		zap.Int("configured_modules", len(cfg.Reflector.Modules)),
-	)
 
 	// 2. Initialize Logger
 	logCfg := logger.Config{
@@ -52,6 +48,10 @@ func main() {
 	if err := logger.Init(logCfg); err != nil {
 		panic("Failed to initialize logger: " + err.Error())
 	}
+	logger.Log.Info("Config loaded",
+		zap.String("reflector_name", cfg.Reflector.Name),
+		zap.Int("configured_modules", len(cfg.Reflector.Modules)),
+	)
 	defer logger.Sync()
 
 	logger.Log.Info("Starting URFD Dashboard",
@@ -69,6 +69,13 @@ func main() {
 	// 4. Initialize Hub
 	hub := server.NewHub()
 	go hub.Run()
+
+	// 4b. Serve Audio if enabled
+	if cfg.Audio.Enable {
+		fs := http.FileServer(http.Dir(cfg.Audio.Path))
+		http.Handle("/audio/", http.StripPrefix("/audio/", fs))
+		logger.Log.Info("Audio serving enabled", zap.String("path", cfg.Audio.Path))
+	}
 
 	// State retention & Session management
 	var (
@@ -179,8 +186,13 @@ func main() {
 					ev.Status = "active"
 				} else if ev.Type == "closing" && exists {
 					duration := time.Since(sess.StartTime).Seconds()
-					if err := s.DB.Model(&store.Hearing{}).Where("id = ?", sess.ID).Update("duration", duration).Error; err != nil {
-						logger.Log.Error("Failed to update session duration", zap.Error(err))
+					updates := map[string]interface{}{"duration": duration}
+					if ev.Recording != "" {
+						updates["audio_file"] = ev.Recording
+					}
+
+					if err := s.DB.Model(&store.Hearing{}).Where("id = ?", sess.ID).Updates(updates).Error; err != nil {
+						logger.Log.Error("Failed to update session", zap.Error(err))
 					}
 					ev.ID = sess.ID
 					ev.Status = "ended"
@@ -191,6 +203,11 @@ func main() {
 					ev.Protocol = sess.Protocol
 					ev.Ur = sess.Ur
 					ev.Rpt2 = sess.Rpt2
+					ev.Protocol = sess.Protocol
+					ev.Ur = sess.Ur
+					ev.Rpt2 = sess.Rpt2
+					// ev.Recording is already set from Unmarshal if present
+					// and persisted to DB above. It will be broadcasted below.
 
 					// Clean up all sessions for this callsign to be safe
 					for k, s := range sessions {
