@@ -99,6 +99,14 @@ export const useLiveStore = defineStore('live', () => {
                         if (ev.ur && !existing.ur) existing.ur = ev.ur
                         if (ev.rpt2 && !existing.rpt2) existing.rpt2 = ev.rpt2
                         if (ev.created_at && !existing.created_at) existing.created_at = ev.created_at
+
+                        // closing event updates
+                        if (ev.type === 'closing') {
+                            existing.status = 'ended'
+                            if (ev.duration) existing.duration = ev.duration
+                            if (ev.recording) existing.audio_file = ev.recording
+                            if (ev.audio_file) existing.audio_file = ev.audio_file
+                        }
                     }
                 } else if (ev.type === 'hearing' && ev.id && ev.my) {
                     // Critical: Sanitize and construct a clean Hearing object
