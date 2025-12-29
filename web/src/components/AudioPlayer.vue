@@ -24,10 +24,35 @@ const trackSubtitle = computed(() => {
   return player.currentTrack.description
 })
 
+// Web Audio API
+let audioContext: AudioContext | null = null
+let sourceNode: MediaElementAudioSourceNode | null = null
+let gainNode: GainNode | null = null
+
+// Initialize Audio Context on first interaction or mount
+const initAudioContext = () => {
+    if (!audioContext && audioEl.value) {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+        audioContext = new AudioContextClass()
+        sourceNode = audioContext.createMediaElementSource(audioEl.value)
+        gainNode = audioContext.createGain()
+        
+        // Connect: Source -> Gain -> Destination
+        sourceNode.connect(gainNode)
+        gainNode.connect(audioContext.destination)
+        
+        // Set initial volume
+        gainNode.gain.value = player.volume
+    } else if (audioContext?.state === 'suspended') {
+        audioContext.resume()
+    }
+}
+
 // Watchers
 watch(() => player.currentTrack, (newTrack) => {
   if (newTrack && audioEl.value) {
     audioEl.value.src = newTrack.url
+    initAudioContext() // Ensure context is ready
     if (player.isPlaying) {
       audioEl.value.play().catch(e => console.error("Playback failed", e))
     }
@@ -36,6 +61,7 @@ watch(() => player.currentTrack, (newTrack) => {
 
 watch(() => player.isPlaying, (playing) => {
   if (!audioEl.value) return
+  initAudioContext() // Ensure context is ready
   if (playing) {
       // Check if we have source
       if (audioEl.value.src) {
@@ -47,9 +73,13 @@ watch(() => player.isPlaying, (playing) => {
 })
 
 watch(() => player.volume, (vol) => {
-  if (audioEl.value) {
-    audioEl.value.volume = vol
-  }
+    // If using Web Audio API
+    if (gainNode) {
+        gainNode.gain.value = vol
+    } else if (audioEl.value) {
+        // Fallback (though initAudioContext should have run)
+        audioEl.value.volume = Math.min(vol, 1.0)
+    }
 })
 
 // Handlers
@@ -149,7 +179,7 @@ const formatTime = (seconds: number) => {
             <div class="hidden sm:flex items-center gap-2 w-24">
                 <Volume2 :size="16" class="text-slate-400" />
                 <input type="range" 
-                       min="0" max="1" step="0.01" 
+                       min="0" max="3" step="0.1" 
                        v-model.number="player.volume"
                        class="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600">
             </div>
