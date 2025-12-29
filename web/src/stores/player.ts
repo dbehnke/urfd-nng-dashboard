@@ -21,6 +21,7 @@ export const usePlayerStore = defineStore('player', () => {
     const currentTime = ref(0)
     const duration = ref(0)
     const isAgcEnabled = ref(true)
+    const isRecording = ref(false)
 
     // Actions
     const play = (track: Track, context: Track[] = []) => {
@@ -111,6 +112,7 @@ export const usePlayerStore = defineStore('player', () => {
         currentTime,
         duration,
         isAgcEnabled,
+        isRecording,
         play,
         togglePlay,
         toggleLiveMode,

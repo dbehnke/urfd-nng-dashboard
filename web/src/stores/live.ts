@@ -66,6 +66,8 @@ export const useLiveStore = defineStore('live', () => {
             if (ev.type === 'hearing' || ev.type === 'closing') {
                 if ((ev.type === 'closing' || ev.status === 'ended') && ev.id) {
                     delete activeSessions[ev.id]
+                    player.isRecording = Object.keys(activeSessions).length > 0 // Update recording state
+
                     // Update history entry with final duration
                     const h = lastHeard.value.find(x => x.id === ev.id)
                     if (h) {
@@ -103,6 +105,7 @@ export const useLiveStore = defineStore('live', () => {
                         }
                     }
                     activeSessions[ev.id] = Date.now()
+                    player.isRecording = true
                 }
 
                 // De-duplicate: search if we already have this session

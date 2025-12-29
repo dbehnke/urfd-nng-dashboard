@@ -205,6 +205,10 @@ const formatTime = (seconds: number) => {
               LIVE
             </span>
           </div>
+          <div v-if="player.isRecording && !player.isPlaying" class="flex items-center gap-2" title="Recording in progress. Audio will be available shortly.">
+             <div class="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse"></div>
+            <span class="text-xs font-bold text-red-600 dark:text-red-400">REC</span>
+          </div>
           <p class="text-xs text-slate-500 dark:text-slate-400 truncate">
             {{ trackSubtitle }}
           </p>
