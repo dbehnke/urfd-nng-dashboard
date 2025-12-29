@@ -375,6 +375,16 @@ func main() {
 	}
 
 	logger.Log.Info("HTTP server starting", zap.String("addr", cfg.Server.Addr))
+
+	// Serve Audio Files
+	if cfg.Audio.Enable && cfg.Audio.Path != "" {
+		logger.Log.Info("Serving audio files", zap.String("path", cfg.Audio.Path), zap.String("url", "/audio/"))
+		// Use http.FileServer to serve files from the directory
+		fs := http.FileServer(http.Dir(cfg.Audio.Path))
+		// Strip the /audio/ prefix so the file server sees the relative path
+		http.Handle("/audio/", http.StripPrefix("/audio/", fs))
+	}
+
 	if err := srv.Start(cfg.Server.Addr); err != nil {
 		logger.Log.Fatal("Server failed", zap.Error(err))
 	}
