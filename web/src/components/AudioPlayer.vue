@@ -88,6 +88,7 @@ watch(() => player.currentTrack, (newTrack) => {
     if (player.isPlaying) {
       audioEl.value.play().catch(e => console.error("Playback failed", e))
     }
+    updateMediaSession()
   }
 })
 
@@ -102,6 +103,7 @@ watch(() => player.isPlaying, (playing) => {
   } else {
     audioEl.value.pause()
   }
+  updateMediaSession()
 })
 
 watch(() => player.volume, (vol) => {
@@ -128,6 +130,36 @@ const onEnded = () => {
 
 const togglePlay = () => {
     player.togglePlay()
+}
+
+// Media Session API
+const updateMediaSession = () => {
+    if (!('mediaSession' in navigator) || !player.currentTrack) return
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+        title: player.currentTrack.callsign,
+        artist: player.currentTrack.description,
+        album: `Module ${player.currentTrack.module}`,
+        artwork: [
+            { src: '/icon.png', sizes: '96x96', type: 'image/png' },
+            { src: '/icon.png', sizes: '128x128', type: 'image/png' },
+            { src: '/icon.png', sizes: '192x192', type: 'image/png' },
+            { src: '/icon.png', sizes: '512x512', type: 'image/png' },
+        ]
+    })
+
+    navigator.mediaSession.setActionHandler('play', () => {
+        player.togglePlay()
+    })
+    navigator.mediaSession.setActionHandler('pause', () => {
+        player.togglePlay()
+    })
+    navigator.mediaSession.setActionHandler('previoustrack', () => {
+        player.playPrevious()
+    })
+    navigator.mediaSession.setActionHandler('nexttrack', () => {
+        player.playNext()
+    })
 }
 
 const toggleLive = () => {
@@ -204,14 +236,14 @@ const formatTime = (seconds: number) => {
         <!-- Live Mode & Volume -->
         <div class="flex items-center gap-4 flex-1 justify-end">
             <button @click="toggleLive" 
-                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors"
+                    class="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors"
                     :class="player.isLiveMode ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'">
                 <Activity :size="14" />
-                <span>{{ player.isLiveMode ? 'LIVE ON' : 'LIVE OFF' }}</span>
+                <span>{{ player.isLiveMode ? 'LIVE' : 'OFF' }}</span>
             </button>
 
             <button @click="player.toggleAgc()" 
-                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors"
+                    class="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors"
                     :class="player.isAgcEnabled ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'"
                     title="Auto-Leveling (AGC)">
                 <Activity :size="14" class="rotate-90" />
