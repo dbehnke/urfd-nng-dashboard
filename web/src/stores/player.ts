@@ -34,6 +34,10 @@ export const usePlayerStore = defineStore('player', () => {
         isLiveMode.value = !isLiveMode.value
     }
 
+    const toggleAgc = () => {
+        isAgcEnabled.value = !isAgcEnabled.value
+    }
+
     const handleNewRecording = (track: Track) => {
         if (isLiveMode.value) {
             // New items are conceptually "first" in the playlist if it's reverse chrono.
@@ -104,9 +108,11 @@ export const usePlayerStore = defineStore('player', () => {
         volume,
         currentTime,
         duration,
+        isAgcEnabled,
         play,
         togglePlay,
         toggleLiveMode,
+        toggleAgc,
         handleNewRecording,
         onTrackEnd,
         playNext,

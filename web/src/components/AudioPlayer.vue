@@ -28,6 +28,7 @@ const trackSubtitle = computed(() => {
 let audioContext: AudioContext | null = null
 let sourceNode: MediaElementAudioSourceNode | null = null
 let gainNode: GainNode | null = null
+let compressorNode: DynamicsCompressorNode | null = null
 
 // Initialize Audio Context on first interaction or mount
 const initAudioContext = () => {
@@ -36,10 +37,17 @@ const initAudioContext = () => {
         audioContext = new AudioContextClass()
         sourceNode = audioContext.createMediaElementSource(audioEl.value)
         gainNode = audioContext.createGain()
+        compressorNode = audioContext.createDynamicsCompressor()
         
-        // Connect: Source -> Gain -> Destination
-        sourceNode.connect(gainNode)
-        gainNode.connect(audioContext.destination)
+        // Configure Compressor (Auto-Level)
+        // High ratio for leveling, fast attack, moderate release
+        compressorNode.threshold.value = -24
+        compressorNode.knee.value = 30
+        compressorNode.ratio.value = 12
+        compressorNode.attack.value = 0.003
+        compressorNode.release.value = 0.25
+
+        updateRouting()
         
         // Set initial volume
         gainNode.gain.value = player.volume
@@ -48,7 +56,31 @@ const initAudioContext = () => {
     }
 }
 
+const updateRouting = () => {
+    if (!audioContext || !sourceNode || !gainNode || !compressorNode) return
+    
+    // Disconnect everything
+    sourceNode.disconnect()
+    compressorNode.disconnect()
+    gainNode.disconnect()
+    
+    if (player.isAgcEnabled) {
+        // Source -> Compressor -> Gain -> Destination
+        sourceNode.connect(compressorNode)
+        compressorNode.connect(gainNode)
+    } else {
+        // Source -> Gain -> Destination
+        sourceNode.connect(gainNode)
+    }
+    
+    gainNode.connect(audioContext.destination)
+}
+
 // Watchers
+watch(() => player.isAgcEnabled, () => {
+    updateRouting()
+})
+
 watch(() => player.currentTrack, (newTrack) => {
   if (newTrack && audioEl.value) {
     audioEl.value.src = newTrack.url
@@ -176,6 +208,14 @@ const formatTime = (seconds: number) => {
                     :class="player.isLiveMode ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'">
                 <Activity :size="14" />
                 <span>{{ player.isLiveMode ? 'LIVE ON' : 'LIVE OFF' }}</span>
+            </button>
+
+            <button @click="player.toggleAgc()" 
+                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors"
+                    :class="player.isAgcEnabled ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'"
+                    title="Auto-Leveling (AGC)">
+                <Activity :size="14" class="rotate-90" />
+                <span>AGC</span>
             </button>
 
             <div class="hidden sm:flex items-center gap-2 w-24">
