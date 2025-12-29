@@ -184,8 +184,12 @@ const playAudio = (file: string) => {
     <!-- Mobile Card View (Visible < 640px) -->
     <div class="block sm:hidden space-y-4">
       <div v-for="entry in filteredEntries.slice(0, 26)" :key="entry.id"
-           class="bg-white dark:bg-slate-900 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-800 relative overflow-hidden"
-           :class="{'border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-900/10': live.isSessionActive(entry.id)}">
+           @click="entry.audio_file && playAudio(entry.audio_file)"
+           class="bg-white dark:bg-slate-900 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-800 relative overflow-hidden transition-all duration-300 active:scale-95"
+           :class="{
+             'border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-900/10': live.isSessionActive(entry.id),
+             'ring-2 ring-blue-500 shadow-lg shadow-blue-500/20 z-10 scale-[1.02]': player.currentTrack?.id === entry.id
+           }">
         
         <!-- Active Indicator Strip -->
         <div v-if="live.isSessionActive(entry.id)" 
@@ -200,10 +204,24 @@ const playAudio = (file: string) => {
               <span v-if="live.isSessionActive(entry.id)" class="inline-block w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
             </div>
           </div>
-          <span class="px-2 py-1 rounded text-[10px] font-bold uppercase ml-2"
-                :class="live.isSessionActive(entry.id) ? 'bg-red-500 text-white' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400'">
-            {{ entry.protocol }}
-          </span>
+          
+          <div class="flex items-center gap-3">
+             <!-- Play Button for Mobile -->
+             <button v-if="entry.audio_file" 
+                     @click.stop="playAudio(entry.audio_file)"
+                     class="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                     :class="{'animate-pulse bg-blue-500 text-white dark:bg-blue-600': player.currentTrack?.id === entry.id}">
+                <Play :size="20" class="fill-current" />
+             </button>
+
+             <div class="text-right">
+               <span class="px-2 py-1 rounded text-[10px] font-bold uppercase block mb-1"
+                    :class="live.isSessionActive(entry.id) ? 'bg-red-500 text-white' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400'">
+                {{ entry.protocol }}
+               </span>
+               <div class="text-xs font-bold text-slate-700 dark:text-slate-300">{{ entry.ur }}</div>
+             </div>
+          </div>
         </div>
 
         <div class="grid grid-cols-2 gap-2 pl-2 text-sm">
