@@ -24,11 +24,19 @@ const trackSubtitle = computed(() => {
   return player.currentTrack.description
 })
 
+const CANVAS_WIDTH = 100
+const CANVAS_HEIGHT = 40
+
 // Web Audio API
 let audioContext: AudioContext | null = null
 let sourceNode: MediaElementAudioSourceNode | null = null
 let gainNode: GainNode | null = null
 let compressorNode: DynamicsCompressorNode | null = null
+let analyserNode: AnalyserNode | null = null
+let animationFrameId: number | null = null
+
+// Canvas
+const canvasEl = ref<HTMLCanvasElement | null>(null)
 
 // Initialize Audio Context on first interaction or mount
 const initAudioContext = () => {
@@ -38,9 +46,12 @@ const initAudioContext = () => {
         sourceNode = audioContext.createMediaElementSource(audioEl.value)
         gainNode = audioContext.createGain()
         compressorNode = audioContext.createDynamicsCompressor()
+        analyserNode = audioContext.createAnalyser()
+        
+        // Configure Analyser
+        analyserNode.fftSize = 256
         
         // Configure Compressor (Auto-Level)
-        // High ratio for leveling, fast attack, moderate release
         compressorNode.threshold.value = -24
         compressorNode.knee.value = 30
         compressorNode.ratio.value = 12
@@ -48,6 +59,7 @@ const initAudioContext = () => {
         compressorNode.release.value = 0.25
 
         updateRouting()
+        draw()
         
         // Set initial volume
         gainNode.gain.value = player.volume
@@ -57,23 +69,75 @@ const initAudioContext = () => {
 }
 
 const updateRouting = () => {
-    if (!audioContext || !sourceNode || !gainNode || !compressorNode) return
+    if (!audioContext || !sourceNode || !gainNode || !compressorNode || !analyserNode) return
     
     // Disconnect everything
     sourceNode.disconnect()
     compressorNode.disconnect()
     gainNode.disconnect()
+    analyserNode.disconnect()
     
+    // Chain: Source -> [Compressor] -> Analyser -> Gain -> Destination
+    let currentNode: AudioNode = sourceNode
+
     if (player.isAgcEnabled) {
-        // Source -> Compressor -> Gain -> Destination
         sourceNode.connect(compressorNode)
-        compressorNode.connect(gainNode)
-    } else {
-        // Source -> Gain -> Destination
-        sourceNode.connect(gainNode)
+        currentNode = compressorNode
     }
-    
+
+    currentNode.connect(analyserNode)
+    analyserNode.connect(gainNode)
     gainNode.connect(audioContext.destination)
+}
+
+const draw = () => {
+    if (!canvasEl.value || !analyserNode) return
+
+    const canvas = canvasEl.value
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const bufferLength = analyserNode.frequencyBinCount
+    const dataArray = new Uint8Array(bufferLength)
+
+    const drawVisual = () => {
+        animationFrameId = requestAnimationFrame(drawVisual)
+        
+        if (!analyserNode) return
+        analyserNode.getByteTimeDomainData(dataArray)
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0)' // Transparent clear
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+        ctx.lineWidth = 2
+        ctx.strokeStyle = '#3b82f6' // Blue-500
+        
+        // Dark mode adjustment if needed, but blue works on both
+        // Check for dark mode via class? Or just use a vibrant color.
+        
+        ctx.beginPath()
+
+        const sliceWidth = canvas.width * 1.0 / bufferLength
+        let x = 0
+
+        for (let i = 0; i < bufferLength; i++) {
+            const v = dataArray[i] / 128.0
+            const y = v * canvas.height / 2
+
+            if (i === 0) {
+                ctx.moveTo(x, y)
+            } else {
+                ctx.lineTo(x, y)
+            }
+
+            x += sliceWidth
+        }
+
+        ctx.lineTo(canvas.width, canvas.height / 2)
+        ctx.stroke()
+    }
+
+    drawVisual()
 }
 
 // Watchers
@@ -212,6 +276,11 @@ const formatTime = (seconds: number) => {
           <p class="text-xs text-slate-500 dark:text-slate-400 truncate">
             {{ trackSubtitle }}
           </p>
+        </div>
+
+        <!-- Oscilloscope -->
+        <div class="hidden md:block w-24 h-10 flex-shrink-0">
+            <canvas ref="canvasEl" width="100" height="40" class="w-full h-full"></canvas>
         </div>
 
         <!-- Controls (Center) -->
