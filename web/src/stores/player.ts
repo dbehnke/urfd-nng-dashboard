@@ -89,6 +89,12 @@ export const usePlayerStore = defineStore('player', () => {
         if (idx > 0) {
             const nextTrack = playlist.value[idx - 1]
             if (nextTrack) play(nextTrack, playlist.value)
+        } else if (idx === 0) {
+            // We are at the newest track, and user wants "Next" (or auto-advance)
+            // Go to "Live / Waiting" state
+            currentTrack.value = null
+            isPlaying.value = false
+            isLiveMode.value = true
         }
     }
 
