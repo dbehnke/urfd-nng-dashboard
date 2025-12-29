@@ -80,21 +80,24 @@ export const usePlayerStore = defineStore('player', () => {
     }
 
     const playNext = () => {
+        // Next: Newer (up list, towards index 0)
+        // User wants "Time Forward" (Historic -> Live)
         if (!currentTrack.value || playlist.value.length === 0) return
 
         const idx = playlist.value.findIndex(t => t.id === currentTrack.value?.id)
-        if (idx !== -1 && idx < playlist.value.length - 1) {
-            const nextTrack = playlist.value[idx + 1]
+        if (idx > 0) {
+            const nextTrack = playlist.value[idx - 1]
             if (nextTrack) play(nextTrack, playlist.value)
         }
     }
 
     const playPrevious = () => {
+        // Previous: Older (down list, towards index N)
         if (!currentTrack.value || playlist.value.length === 0) return
 
         const idx = playlist.value.findIndex(t => t.id === currentTrack.value?.id)
-        if (idx > 0) {
-            const prevTrack = playlist.value[idx - 1]
+        if (idx !== -1 && idx < playlist.value.length - 1) {
+            const prevTrack = playlist.value[idx + 1]
             if (prevTrack) play(prevTrack, playlist.value)
         }
     }
