@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
 import { useReflectorStore } from './reflector'
+import { usePlayerStore } from './player'
 
 export interface Hearing {
     id: number
@@ -21,6 +22,7 @@ export const useLiveStore = defineStore('live', () => {
     const connected = ref(false)
     const activeSessions = reactive<Record<number, number>>({}) // Session ID -> Last Seen Timestamp
     const reflector = useReflectorStore()
+    const player = usePlayerStore()
 
     let ws: WebSocket | null = null
 
@@ -106,6 +108,18 @@ export const useLiveStore = defineStore('live', () => {
                             if (ev.duration) existing.duration = ev.duration
                             if (ev.recording) existing.audio_file = ev.recording
                             if (ev.audio_file) existing.audio_file = ev.audio_file
+
+                            // Notify player store for Live Mode
+                            if (existing.audio_file) {
+                                player.handleNewRecording({
+                                    id: existing.id,
+                                    url: `/audio/${existing.audio_file}`,
+                                    callsign: existing.my,
+                                    module: existing.module,
+                                    duration: existing.duration || 0,
+                                    description: `${existing.ur} via ${existing.rpt1}`
+                                })
+                            }
                         }
                     }
                 } else if (ev.type === 'hearing' && ev.id && ev.my) {

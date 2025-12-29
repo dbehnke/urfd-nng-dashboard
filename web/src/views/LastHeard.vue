@@ -115,10 +115,24 @@ const clearFilters = () => {
   moduleFilter.value = ''
 }
 
+import { usePlayerStore } from '../stores/player'
+
+const player = usePlayerStore()
+
 const playAudio = (file: string) => {
   if (!file) return
-  const audio = new Audio(`/audio/${file}`)
-  audio.play().catch(e => console.error("Audio playback failed", e))
+  // Find the entry that matches this file to get details
+  const entry = live.lastHeard.find((h: any) => h.audio_file === file)
+  if (entry) {
+      player.play({
+          id: entry.id,
+          url: `/audio/${file}`,
+          callsign: entry.my,
+          module: entry.module,
+          duration: entry.duration || 0,
+          description: `${entry.ur} via ${entry.rpt1}`
+      })
+  }
 }
 </script>
 
