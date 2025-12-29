@@ -70,13 +70,6 @@ func main() {
 	hub := server.NewHub()
 	go hub.Run()
 
-	// 4b. Serve Audio if enabled
-	if cfg.Audio.Enable {
-		fs := http.FileServer(http.Dir(cfg.Audio.Path))
-		http.Handle("/audio/", http.StripPrefix("/audio/", fs))
-		logger.Log.Info("Audio serving enabled", zap.String("path", cfg.Audio.Path))
-	}
-
 	// State retention & Session management
 	var (
 		lastState nng.Event
