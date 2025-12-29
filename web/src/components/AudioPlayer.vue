@@ -145,12 +145,28 @@ watch(() => player.isAgcEnabled, () => {
     updateRouting()
 })
 
+// Playback Blocked State
+const isBlocked = ref(false)
+
+const attemptPlay = async () => {
+    if (!audioEl.value) return
+    try {
+        await audioEl.value.play()
+        isBlocked.value = false
+    } catch (e: any) {
+        console.error("Playback failed", e)
+        if (e.name === 'NotAllowedError') {
+            isBlocked.value = true
+        }
+    }
+}
+
 watch(() => player.currentTrack, (newTrack) => {
   if (newTrack && audioEl.value) {
     audioEl.value.src = newTrack.url
     initAudioContext() // Ensure context is ready
     if (player.isPlaying) {
-      audioEl.value.play().catch(e => console.error("Playback failed", e))
+      attemptPlay()
     }
     updateMediaSession()
   }
@@ -162,10 +178,11 @@ watch(() => player.isPlaying, (playing) => {
   if (playing) {
       // Check if we have source
       if (audioEl.value.src) {
-        audioEl.value.play().catch(e => console.error("Playback failed", e))
+        attemptPlay()
       }
   } else {
     audioEl.value.pause()
+    isBlocked.value = false
   }
   updateMediaSession()
 })
@@ -254,6 +271,16 @@ const formatTime = (seconds: number) => {
            @timeupdate="onTimeUpdate" 
            @ended="onEnded"
            preload="auto"></audio>
+
+    <!-- Resume Overlay for Autoplay Block -->
+    <div v-if="isBlocked" 
+         class="absolute inset-x-0 -top-12 flex justify-center pointer-events-none z-50">
+        <button @click="attemptPlay" 
+                class="pointer-events-auto bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg font-bold text-sm flex items-center gap-2 animate-bounce">
+            <Play :size="16" class="fill-current" />
+            Tap to Resume Playback
+        </button>
+    </div>
 
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
       <div class="flex items-center gap-4">
