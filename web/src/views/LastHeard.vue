@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useLiveStore } from '../stores/live'
 import { useReflectorStore } from '../stores/reflector'
+import { Play } from 'lucide-vue-next'
 
 const live = useLiveStore()
 const reflector = useReflectorStore()
