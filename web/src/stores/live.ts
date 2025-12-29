@@ -72,6 +72,22 @@ export const useLiveStore = defineStore('live', () => {
                         h.duration = ev.duration
                         h.status = 'ended'
                         if (ev.protocol) h.protocol = ev.protocol
+
+                        // Capture audio file
+                        if (ev.recording) h.audio_file = ev.recording
+                        if (ev.audio_file) h.audio_file = ev.audio_file
+
+                        // Notify player store for Live Mode
+                        if (h.audio_file) {
+                            player.handleNewRecording({
+                                id: h.id,
+                                url: `/audio/${h.audio_file}`,
+                                callsign: h.my,
+                                module: h.module,
+                                duration: h.duration || 0,
+                                description: `${h.ur} via ${h.rpt1}`
+                            })
+                        }
                     }
                     return
                 }
