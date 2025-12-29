@@ -16,6 +16,11 @@ export const usePlayerStore = defineStore('player', () => {
     const isPlaying = ref(false)
     const isLiveMode = ref(true) // Default to live mode
     const playlist = ref<Track[]>([])
+    const queue = ref<Track[]>([])
+    const volume = ref(1.0)
+    const currentTime = ref(0)
+    const duration = ref(0)
+    const isAgcEnabled = ref(true)
 
     // Actions
     const play = (track: Track, context: Track[] = []) => {
@@ -75,28 +80,22 @@ export const usePlayerStore = defineStore('player', () => {
     }
 
     const playNext = () => {
-        // Next: Newer (up list) or Older (down list)?
-        // Audio player convention: Next = Track N+1.
-        // In LastHeard, list is ordered New -> Old. 
-        // So Track 0 is newest. Track 1 is older.
-        // Usually "Next" means "Play the one after this".
-        // If I listen to T_now. Next -> T_before.
-        // Let's enable "Auto-Play Next" to go down the list (Time reverse).
         if (!currentTrack.value || playlist.value.length === 0) return
 
         const idx = playlist.value.findIndex(t => t.id === currentTrack.value?.id)
         if (idx !== -1 && idx < playlist.value.length - 1) {
-            play(playlist.value[idx + 1], playlist.value)
+            const nextTrack = playlist.value[idx + 1]
+            if (nextTrack) play(nextTrack, playlist.value)
         }
     }
 
     const playPrevious = () => {
-        // Previous: Newer (up list).
         if (!currentTrack.value || playlist.value.length === 0) return
 
         const idx = playlist.value.findIndex(t => t.id === currentTrack.value?.id)
         if (idx > 0) {
-            play(playlist.value[idx - 1], playlist.value)
+            const prevTrack = playlist.value[idx - 1]
+            if (prevTrack) play(prevTrack, playlist.value)
         }
     }
 
