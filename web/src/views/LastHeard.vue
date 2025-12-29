@@ -124,6 +124,18 @@ const playAudio = (file: string) => {
   // Find the entry that matches this file to get details
   const entry = live.lastHeard.find((h: any) => h.audio_file === file)
   if (entry) {
+      // Map all current visible entries to tracks to provide context
+      const playlist = live.lastHeard
+          .filter(h => h.audio_file) // Only those with audio
+          .map(h => ({
+              id: h.id,
+              url: `/audio/${h.audio_file}`,
+              callsign: h.my,
+              module: h.module,
+              duration: h.duration || 0,
+              description: `${h.ur} via ${h.rpt1}`
+          }))
+
       player.play({
           id: entry.id,
           url: `/audio/${file}`,
@@ -131,7 +143,7 @@ const playAudio = (file: string) => {
           module: entry.module,
           duration: entry.duration || 0,
           description: `${entry.ur} via ${entry.rpt1}`
-      })
+      }, playlist)
   }
 }
 </script>

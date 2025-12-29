@@ -15,22 +15,15 @@ export const usePlayerStore = defineStore('player', () => {
     const currentTrack = ref<Track | null>(null)
     const isPlaying = ref(false)
     const isLiveMode = ref(true) // Default to live mode
-    const queue = ref<Track[]>([])
-    const volume = ref(1.0)
-    const currentTime = ref(0)
-    const duration = ref(0)
+    const playlist = ref<Track[]>([])
 
     // Actions
-    const play = (track: Track) => {
-        // If playing the same track, do nothing or toggle?
-        // Let's assume play means start this track now.
+    const play = (track: Track, context: Track[] = []) => {
         currentTrack.value = track
         isPlaying.value = true
-        // If we manually play a track, should we disable live mode?
-        // Often yes, otherwise new tracks interrupt.
-        // Or we keep live mode but this just plays one old track?
-        // Let's pause Live Mode temporarily if user clicks an old track?
-        // For now, let's keep it simple.
+        if (context.length > 0) {
+            playlist.value = context
+        }
     }
 
     const togglePlay = () => {
@@ -43,26 +36,63 @@ export const usePlayerStore = defineStore('player', () => {
 
     const handleNewRecording = (track: Track) => {
         if (isLiveMode.value) {
-            // If we are idle, play immediately
+            // New items are conceptually "first" in the playlist if it's reverse chrono.
+            // If we are playing, and not busy, we play it.
+            // If busy, we queue it.
             if (!isPlaying.value) {
                 play(track)
             } else {
-                // Enqueue? Or just let it go?
-                // "Live Mode usually means jump to newest"
-                // But if someone is speaking long, we might want to queue it.
-                // Let's add to queue.
                 queue.value.push(track)
             }
         }
     }
 
     const onTrackEnd = () => {
-        isPlaying.value = false
+        // Priority: Queue (Live Mode) -> Next in Playlist
         if (queue.value.length > 0) {
             const next = queue.value.shift()
             if (next) {
+                // Keep context if we want, or just play
                 play(next)
+                return
             }
+        }
+
+        // Auto-advance in playlist if Live Mode is OFF? Or usually if user clicked from list
+        // "Next" in a list usually means "Next item". In a detailed list, that is index + 1?
+        // Wait, LastHeard is Newest (0) to Oldest (N).
+        // If I play (Index 0), the "next" logical track is Index 1 (older).
+        // Let's assume standard behavior: Play through the list.
+        if (currentTrack.value && playlist.value.length > 0) {
+            playNext()
+        } else {
+            isPlaying.value = false
+        }
+    }
+
+    const playNext = () => {
+        // Next: Newer (up list) or Older (down list)?
+        // Audio player convention: Next = Track N+1.
+        // In LastHeard, list is ordered New -> Old. 
+        // So Track 0 is newest. Track 1 is older.
+        // Usually "Next" means "Play the one after this".
+        // If I listen to T_now. Next -> T_before.
+        // Let's enable "Auto-Play Next" to go down the list (Time reverse).
+        if (!currentTrack.value || playlist.value.length === 0) return
+
+        const idx = playlist.value.findIndex(t => t.id === currentTrack.value?.id)
+        if (idx !== -1 && idx < playlist.value.length - 1) {
+            play(playlist.value[idx + 1], playlist.value)
+        }
+    }
+
+    const playPrevious = () => {
+        // Previous: Newer (up list).
+        if (!currentTrack.value || playlist.value.length === 0) return
+
+        const idx = playlist.value.findIndex(t => t.id === currentTrack.value?.id)
+        if (idx > 0) {
+            play(playlist.value[idx - 1], playlist.value)
         }
     }
 
@@ -78,6 +108,8 @@ export const usePlayerStore = defineStore('player', () => {
         togglePlay,
         toggleLiveMode,
         handleNewRecording,
-        onTrackEnd
+        onTrackEnd,
+        playNext,
+        playPrevious
     }
 })

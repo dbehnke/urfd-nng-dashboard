@@ -149,8 +149,9 @@ const formatTime = (seconds: number) => {
         <!-- Controls (Center) -->
         <div class="flex flex-col items-center gap-1 flex-1">
           <div class="flex items-center gap-4">
-            <button class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                    title="Previous (Coming Soon)">
+            <button @click="player.playPrevious()" 
+                    class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                    title="Previous Recording">
               <SkipBack :size="20" />
             </button>
 
@@ -160,8 +161,9 @@ const formatTime = (seconds: number) => {
               <Play v-else :size="24" class="fill-current ml-0.5" />
             </button>
 
-            <button class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                    title="Next (Skip)">
+            <button @click="player.playNext()" 
+                    class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                    title="Next Recording">
               <SkipForward :size="20" />
             </button>
           </div>
