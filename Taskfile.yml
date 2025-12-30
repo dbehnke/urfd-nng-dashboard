@@ -5,9 +5,9 @@ vars:
   SIM_NAME: urfd-simulator
   WEB_DIR: web
   GIT_VERSION:
-    sh: git describe --tags --always --dirty --match "v*" | sed 's/-g\([0-9a-f]\{7,\}\)/-\1/'
+    sh: git describe --tags --always --dirty --match "v*" 2> /dev/null | sed 's/-g\([0-9a-f]\{7,\}\)/-\1/' || echo "docker-build"
   GIT_COMMIT:
-    sh: git rev-parse --short HEAD
+    sh: git rev-parse --short HEAD 2> /dev/null || echo "docker-commit"
   BUILD_DATE:
     sh: date -u +%Y-%m-%dT%H:%M:%SZ
 
