@@ -196,7 +196,7 @@ const playAudio = (file: string) => {
 
     <!-- Mobile Card View (Visible < 640px) -->
     <div class="block sm:hidden space-y-4">
-      <div v-for="entry in filteredEntries.slice(0, 26)" :key="entry.id"
+      <div v-for="entry in filteredEntries" :key="entry.id"
            @click="entry.audio_file && playAudio(entry.audio_file)"
            class="bg-white dark:bg-slate-900 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-800 relative overflow-hidden transition-all duration-300 active:scale-95"
            :class="{
