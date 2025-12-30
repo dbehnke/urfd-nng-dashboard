@@ -24,16 +24,12 @@ const trackSubtitle = computed(() => {
   return player.currentTrack.description
 })
 
-const CANVAS_WIDTH = 100
-const CANVAS_HEIGHT = 40
-
 // Web Audio API
 let audioContext: AudioContext | null = null
 let sourceNode: MediaElementAudioSourceNode | null = null
 let gainNode: GainNode | null = null
 let compressorNode: DynamicsCompressorNode | null = null
 let analyserNode: AnalyserNode | null = null
-let animationFrameId: number | null = null
 
 // Canvas
 const canvasEl = ref<HTMLCanvasElement | null>(null)
@@ -101,7 +97,7 @@ const draw = () => {
     const dataArray = new Uint8Array(bufferLength)
 
     const drawVisual = () => {
-        animationFrameId = requestAnimationFrame(drawVisual)
+        requestAnimationFrame(drawVisual)
         
         if (!analyserNode) return
         analyserNode.getByteTimeDomainData(dataArray)
@@ -121,7 +117,8 @@ const draw = () => {
         let x = 0
 
         for (let i = 0; i < bufferLength; i++) {
-            const v = dataArray[i] / 128.0
+            const val = dataArray[i] ?? 128
+            const v = val / 128.0
             const y = v * canvas.height / 2
 
             if (i === 0) {
