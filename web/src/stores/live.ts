@@ -26,24 +26,52 @@ export const useLiveStore = defineStore('live', () => {
 
     let ws: WebSocket | null = null
 
-    const connect = () => {
-        // Fetch history
-        fetch('/api/history')
-            .then(res => res.json())
-            .then((data: Hearing[]) => {
-                // Ensure dates are parsed if needed, or rely on JS/JSON checks
-                // Also map DB fields if they differ from Hearing interface? 
-                // DB Hearing: CreatedAt (time.Time) -> string/date.
-                // Hearing interface: created_at (string).
-                // GORM/JSON usually handles this to ISO string.
-                // We might need to snake_case mapping.
-                // Actually Go struct tags in models.go?
-                // store.Hearing has json tags? Let's assume snake_case default or check.
-                // NOTE: store.Hearing tags might be missing. I'll assume they match for now or I'd check models.go
-                // But let's just assign.
+    const endOfHistory = ref(false)
+    const isLoadingMore = ref(false)
+
+    const loadMoreHistory = async (initial = false) => {
+        if (isLoadingMore.value || (endOfHistory.value && !initial)) return
+
+        isLoadingMore.value = true
+
+        let url = '/api/history?limit=50'
+        if (!initial && lastHeard.value.length > 0) {
+            // Find lowest ID to use as cursor
+            const minId = Math.min(...lastHeard.value.map(h => h.id).filter(id => id > 0))
+            if (minId > 0 && minId !== Infinity) {
+                url += `&cursor=${minId}`
+            }
+        } else if (initial) {
+            // Reset state on initial load
+            endOfHistory.value = false
+            // Don't clear lastHeard immediately to avoid flash, overwrite on success
+        }
+
+        try {
+            const res = await fetch(url)
+            const data: Hearing[] = await res.json()
+
+            if (data.length < 50) {
+                endOfHistory.value = true
+            }
+
+            if (initial) {
                 lastHeard.value = data
-            })
-            .catch(err => console.error("Failed to load history:", err))
+            } else {
+                // Filter out duplicates just in case
+                const newItems = data.filter(n => !lastHeard.value.some(e => e.id === n.id))
+                lastHeard.value.push(...newItems)
+            }
+        } catch (err) {
+            console.error("Failed to load history:", err)
+        } finally {
+            isLoadingMore.value = false
+        }
+    }
+
+    const connect = () => {
+        // Initial Load
+        loadMoreHistory(true)
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
         const host = window.location.host
@@ -59,6 +87,7 @@ export const useLiveStore = defineStore('live', () => {
             connected.value = false
             setTimeout(connect, 3000)
         }
+
 
         ws.onmessage = (msg) => {
             const ev = JSON.parse(msg.data)
@@ -185,5 +214,5 @@ export const useLiveStore = defineStore('live', () => {
         return !!activeSessions[id]
     }
 
-    return { lastHeard, connected, connect, activeSessions, isSessionActive }
+    return { lastHeard, connected, connect, activeSessions, isSessionActive, loadMoreHistory, endOfHistory, isLoadingMore }
 })

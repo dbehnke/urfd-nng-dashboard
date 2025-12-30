@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -335,11 +336,44 @@ func main() {
 
 	// API Routes
 	http.HandleFunc("/api/history", func(w http.ResponseWriter, r *http.Request) {
+		// Parse query params
+		query := r.URL.Query()
+		limit := 50
+		if l := query.Get("limit"); l != "" {
+			if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
+				limit = parsed
+			}
+		}
+
+		cursor := 0
+		if c := query.Get("cursor"); c != "" {
+			if parsed, err := strconv.Atoi(c); err == nil {
+				cursor = parsed
+			}
+		}
+
+		// Enforce 48-hour limit
+		since := time.Now().Add(-48 * time.Hour)
+		if s := query.Get("since"); s != "" {
+			if parsed, err := time.Parse(time.RFC3339, s); err == nil {
+				if parsed.After(since) {
+					since = parsed
+				}
+			}
+		}
+
 		var hearings []store.Hearing
-		if err := s.DB.Order("id desc").Limit(50).Find(&hearings).Error; err != nil {
+		dbQuery := s.DB.Order("id desc").Where("created_at > ?", since).Limit(limit)
+
+		if cursor > 0 {
+			dbQuery = dbQuery.Where("id < ?", cursor)
+		}
+
+		if err := dbQuery.Find(&hearings).Error; err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(hearings); err != nil {
 			logger.Log.Error("Failed to encode history response", zap.Error(err))

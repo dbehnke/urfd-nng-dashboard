@@ -347,5 +347,20 @@ const playAudio = (file: string) => {
         </table>
       </div>
     </div>
+    <!-- Load More Button -->
+    <div class="flex justify-center pb-8" v-if="!filterText && !moduleFilter">
+      <button 
+        v-if="!live.endOfHistory"
+        @click="live.loadMoreHistory()" 
+        :disabled="live.isLoadingMore"
+        class="px-6 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full shadow-sm text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+      >
+        <span v-if="live.isLoadingMore" class="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></span>
+        <span v-else>Load More History</span>
+      </button>
+      <div v-else class="text-xs text-slate-400 font-medium uppercase tracking-wider">
+        End of History (48h Limit)
+      </div>
+    </div>
   </div>
 </template>
