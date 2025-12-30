@@ -55,7 +55,20 @@ const parseDate = (ts?: string) => {
 const formatTime = (ts?: string) => {
   const time = parseDate(ts)
   if (time === 0) return '-'
-  return new Date(time).toLocaleTimeString()
+  const d = new Date(time)
+  const today = new Date()
+  
+  const isToday = d.getDate() === today.getDate() &&
+                  d.getMonth() === today.getMonth() &&
+                  d.getFullYear() === today.getFullYear()
+
+  if (isToday) {
+    return d.toLocaleTimeString()
+  } else {
+    // Compact date format: "12/30 12:15 PM"
+    // Using undefined locale lets browser choose order (e.g. DD/MM vs MM/DD), but forcing numeric components
+    return d.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }) + ' ' + d.toLocaleTimeString()
+  }
 }
 
 const getDurationDisplay = (entry: any) => {
