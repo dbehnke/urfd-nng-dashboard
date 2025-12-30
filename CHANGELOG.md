@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.3.0...v1.4.0) (2025-12-30)
+
+
+### Features
+
+* Implement Dashboard Pagination and 48h Limit ([#11](https://github.com/dbehnke/urfd-nng-dashboard/issues/11)) ([0c3010f](https://github.com/dbehnke/urfd-nng-dashboard/commit/0c3010f90893c597b794ed9c50eebeabd791acf3))
+
 ## [1.3.0](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.2.1...v1.3.0) (2025-12-27)
 
 
