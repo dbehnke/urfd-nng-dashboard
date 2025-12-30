@@ -20,6 +20,7 @@ type Event struct {
 	Callsign  string    `json:"callsign,omitempty"` // for client_connect/disconnect
 	Module    string    `json:"module,omitempty"`
 	Protocol  string    `json:"protocol,omitempty"`
+	Recording string    `json:"recording,omitempty"`
 
 	// Hearing fields
 	My   string `json:"my,omitempty"`

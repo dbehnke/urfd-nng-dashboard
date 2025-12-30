@@ -15,5 +15,6 @@ type Hearing struct {
 	Protocol string `json:"protocol"`
 
 	// Duration of transmission (optional/computed later)
-	Duration float64 `json:"duration"`
+	Duration  float64 `json:"duration"`
+	AudioFile string  `json:"audio_file,omitempty"`
 }

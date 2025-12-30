@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useLiveStore } from '../stores/live'
 import { useReflectorStore } from '../stores/reflector'
+import { Play } from 'lucide-vue-next'
 
 const live = useLiveStore()
 const reflector = useReflectorStore()
@@ -54,7 +55,20 @@ const parseDate = (ts?: string) => {
 const formatTime = (ts?: string) => {
   const time = parseDate(ts)
   if (time === 0) return '-'
-  return new Date(time).toLocaleTimeString()
+  const d = new Date(time)
+  const today = new Date()
+  
+  const isToday = d.getDate() === today.getDate() &&
+                  d.getMonth() === today.getMonth() &&
+                  d.getFullYear() === today.getFullYear()
+
+  if (isToday) {
+    return d.toLocaleTimeString()
+  } else {
+    // Compact date format: "12/30 12:15 PM"
+    // Using undefined locale lets browser choose order (e.g. DD/MM vs MM/DD), but forcing numeric components
+    return d.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }) + ' ' + d.toLocaleTimeString()
+  }
 }
 
 const getDurationDisplay = (entry: any) => {
@@ -113,6 +127,38 @@ const clearFilters = () => {
   filterText.value = ''
   moduleFilter.value = ''
 }
+
+import { usePlayerStore } from '../stores/player'
+
+const player = usePlayerStore()
+
+const playAudio = (file: string) => {
+  if (!file) return
+  // Find the entry that matches this file to get details
+  const entry = live.lastHeard.find((h: any) => h.audio_file === file)
+  if (entry) {
+      // Map all current visible entries to tracks to provide context
+      const playlist = live.lastHeard
+          .filter(h => h.audio_file) // Only those with audio
+          .map(h => ({
+              id: h.id,
+              url: `/audio/${h.audio_file}`,
+              callsign: h.my,
+              module: h.module,
+              duration: h.duration || 0,
+              description: `${h.ur} via ${h.rpt1}`
+          }))
+
+      player.play({
+          id: entry.id,
+          url: `/audio/${file}`,
+          callsign: entry.my,
+          module: entry.module,
+          duration: entry.duration || 0,
+          description: `${entry.ur} via ${entry.rpt1}`
+      }, playlist)
+  }
+}
 </script>
 
 <template>
@@ -150,9 +196,13 @@ const clearFilters = () => {
 
     <!-- Mobile Card View (Visible < 640px) -->
     <div class="block sm:hidden space-y-4">
-      <div v-for="entry in filteredEntries.slice(0, 26)" :key="entry.id"
-           class="bg-white dark:bg-slate-900 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-800 relative overflow-hidden"
-           :class="{'border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-900/10': live.isSessionActive(entry.id)}">
+      <div v-for="entry in filteredEntries" :key="entry.id"
+           @click="entry.audio_file && playAudio(entry.audio_file)"
+           class="bg-white dark:bg-slate-900 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-800 relative overflow-hidden transition-all duration-300 active:scale-95"
+           :class="{
+             'border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-900/10': live.isSessionActive(entry.id),
+             'ring-2 ring-blue-500 shadow-lg shadow-blue-500/20 z-10 scale-[1.02]': player.currentTrack?.id === entry.id
+           }">
         
         <!-- Active Indicator Strip -->
         <div v-if="live.isSessionActive(entry.id)" 
@@ -167,10 +217,24 @@ const clearFilters = () => {
               <span v-if="live.isSessionActive(entry.id)" class="inline-block w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
             </div>
           </div>
-          <span class="px-2 py-1 rounded text-[10px] font-bold uppercase ml-2"
-                :class="live.isSessionActive(entry.id) ? 'bg-red-500 text-white' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400'">
-            {{ entry.protocol }}
-          </span>
+          
+          <div class="flex items-center gap-3">
+             <!-- Play Button for Mobile -->
+             <button v-if="entry.audio_file" 
+                     @click.stop="playAudio(entry.audio_file)"
+                     class="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                     :class="{'animate-pulse bg-blue-500 text-white dark:bg-blue-600': player.currentTrack?.id === entry.id}">
+                <Play :size="20" class="fill-current" />
+             </button>
+
+             <div class="text-right">
+               <span class="px-2 py-1 rounded text-[10px] font-bold uppercase block mb-1"
+                    :class="live.isSessionActive(entry.id) ? 'bg-red-500 text-white' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400'">
+                {{ entry.protocol }}
+               </span>
+               <div class="text-xs font-bold text-slate-700 dark:text-slate-300">{{ entry.ur }}</div>
+             </div>
+          </div>
         </div>
 
         <div class="grid grid-cols-2 gap-2 pl-2 text-sm">
@@ -224,6 +288,7 @@ const clearFilters = () => {
               <th class="px-6 py-4 font-medium text-slate-500 text-sm text-center">Module</th>
               <th class="px-6 py-4 font-medium text-slate-500 text-sm">Route</th>
               <th class="px-6 py-4 font-medium text-slate-500 text-sm">Protocol</th>
+              <th class="px-6 py-4 font-medium text-slate-500 text-sm text-center">Audio</th>
               <th class="px-6 py-4 font-medium text-slate-500 text-sm text-right">Duration</th>
             </tr>
           </thead>
@@ -257,6 +322,13 @@ const clearFilters = () => {
                   {{ entry.protocol }}
                 </span>
               </td>
+              <td class="px-6 py-4 text-center">
+                 <button v-if="entry.audio_file" @click="playAudio(entry.audio_file)" 
+                         class="p-1.5 rounded-full hover:bg-blue-100 text-blue-600 dark:hover:bg-blue-900/40 dark:text-blue-400 transition-colors"
+                         title="Play Recording">
+                   <Play :size="16" class="fill-current" />
+                 </button>
+              </td>
               <td class="px-6 py-4 text-sm font-mono text-right" :class="live.isSessionActive(entry.id) ? 'text-red-600 font-bold' : 'text-slate-500'">
                 {{ getDurationDisplay(entry) }}
               </td>
@@ -273,6 +345,21 @@ const clearFilters = () => {
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+    <!-- Load More Button -->
+    <div class="flex justify-center pb-8" v-if="!filterText && !moduleFilter">
+      <button 
+        v-if="!live.endOfHistory"
+        @click="live.loadMoreHistory()" 
+        :disabled="live.isLoadingMore"
+        class="px-6 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full shadow-sm text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+      >
+        <span v-if="live.isLoadingMore" class="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></span>
+        <span v-else>Load More History</span>
+      </button>
+      <div v-else class="text-xs text-slate-400 font-medium uppercase tracking-wider">
+        End of History (48h Limit)
       </div>
     </div>
   </div>

@@ -5,6 +5,7 @@ import { Monitor, Users, Share2, LayoutGrid, Clock, Sun, Moon } from 'lucide-vue
 import { useThemeStore } from './stores/theme'
 import { useLiveStore } from './stores/live'
 import AppShell from './layouts/AppShell.vue'
+import AudioPlayer from './components/AudioPlayer.vue'
 
 const theme = useThemeStore()
 const live = useLiveStore()
@@ -62,6 +63,7 @@ const handleNavClick = () => {
 
     <!-- Main Content -->
     <RouterView />
+    <AudioPlayer />
   </AppShell>
 </template>
 

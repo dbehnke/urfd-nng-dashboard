@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
 import { useReflectorStore } from './reflector'
+import { usePlayerStore } from './player'
 
 export interface Hearing {
     id: number
@@ -13,6 +14,7 @@ export interface Hearing {
     created_at: string
     duration?: number
     status?: 'active' | 'ended'
+    audio_file?: string
 }
 
 export const useLiveStore = defineStore('live', () => {
@@ -20,27 +22,56 @@ export const useLiveStore = defineStore('live', () => {
     const connected = ref(false)
     const activeSessions = reactive<Record<number, number>>({}) // Session ID -> Last Seen Timestamp
     const reflector = useReflectorStore()
+    const player = usePlayerStore()
 
     let ws: WebSocket | null = null
 
-    const connect = () => {
-        // Fetch history
-        fetch('/api/history')
-            .then(res => res.json())
-            .then((data: Hearing[]) => {
-                // Ensure dates are parsed if needed, or rely on JS/JSON checks
-                // Also map DB fields if they differ from Hearing interface? 
-                // DB Hearing: CreatedAt (time.Time) -> string/date.
-                // Hearing interface: created_at (string).
-                // GORM/JSON usually handles this to ISO string.
-                // We might need to snake_case mapping.
-                // Actually Go struct tags in models.go?
-                // store.Hearing has json tags? Let's assume snake_case default or check.
-                // NOTE: store.Hearing tags might be missing. I'll assume they match for now or I'd check models.go
-                // But let's just assign.
+    const endOfHistory = ref(false)
+    const isLoadingMore = ref(false)
+
+    const loadMoreHistory = async (initial = false) => {
+        if (isLoadingMore.value || (endOfHistory.value && !initial)) return
+
+        isLoadingMore.value = true
+
+        let url = '/api/history?limit=50'
+        if (!initial && lastHeard.value.length > 0) {
+            // Find lowest ID to use as cursor
+            const minId = Math.min(...lastHeard.value.map(h => h.id).filter(id => id > 0))
+            if (minId > 0 && minId !== Infinity) {
+                url += `&cursor=${minId}`
+            }
+        } else if (initial) {
+            // Reset state on initial load
+            endOfHistory.value = false
+            // Don't clear lastHeard immediately to avoid flash, overwrite on success
+        }
+
+        try {
+            const res = await fetch(url)
+            const data: Hearing[] = await res.json()
+
+            if (data.length < 50) {
+                endOfHistory.value = true
+            }
+
+            if (initial) {
                 lastHeard.value = data
-            })
-            .catch(err => console.error("Failed to load history:", err))
+            } else {
+                // Filter out duplicates just in case
+                const newItems = data.filter(n => !lastHeard.value.some(e => e.id === n.id))
+                lastHeard.value.push(...newItems)
+            }
+        } catch (err) {
+            console.error("Failed to load history:", err)
+        } finally {
+            isLoadingMore.value = false
+        }
+    }
+
+    const connect = () => {
+        // Initial Load
+        loadMoreHistory(true)
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
         const host = window.location.host
@@ -57,18 +88,37 @@ export const useLiveStore = defineStore('live', () => {
             setTimeout(connect, 3000)
         }
 
+
         ws.onmessage = (msg) => {
             const ev = JSON.parse(msg.data)
 
             if (ev.type === 'hearing' || ev.type === 'closing') {
                 if ((ev.type === 'closing' || ev.status === 'ended') && ev.id) {
                     delete activeSessions[ev.id]
+                    player.isRecording = Object.keys(activeSessions).length > 0 // Update recording state
+
                     // Update history entry with final duration
                     const h = lastHeard.value.find(x => x.id === ev.id)
                     if (h) {
                         h.duration = ev.duration
                         h.status = 'ended'
                         if (ev.protocol) h.protocol = ev.protocol
+
+                        // Capture audio file
+                        if (ev.recording) h.audio_file = ev.recording
+                        if (ev.audio_file) h.audio_file = ev.audio_file
+
+                        // Notify player store for Live Mode
+                        if (h.audio_file) {
+                            player.handleNewRecording({
+                                id: h.id,
+                                url: `/audio/${h.audio_file}`,
+                                callsign: h.my,
+                                module: h.module,
+                                duration: h.duration || 0,
+                                description: `${h.ur} via ${h.rpt1}`
+                            })
+                        }
                     }
                     return
                 }
@@ -84,6 +134,7 @@ export const useLiveStore = defineStore('live', () => {
                         }
                     }
                     activeSessions[ev.id] = Date.now()
+                    player.isRecording = true
                 }
 
                 // De-duplicate: search if we already have this session
@@ -98,6 +149,26 @@ export const useLiveStore = defineStore('live', () => {
                         if (ev.ur && !existing.ur) existing.ur = ev.ur
                         if (ev.rpt2 && !existing.rpt2) existing.rpt2 = ev.rpt2
                         if (ev.created_at && !existing.created_at) existing.created_at = ev.created_at
+
+                        // closing event updates
+                        if (ev.type === 'closing') {
+                            existing.status = 'ended'
+                            if (ev.duration) existing.duration = ev.duration
+                            if (ev.recording) existing.audio_file = ev.recording
+                            if (ev.audio_file) existing.audio_file = ev.audio_file
+
+                            // Notify player store for Live Mode
+                            if (existing.audio_file) {
+                                player.handleNewRecording({
+                                    id: existing.id,
+                                    url: `/audio/${existing.audio_file}`,
+                                    callsign: existing.my,
+                                    module: existing.module,
+                                    duration: existing.duration || 0,
+                                    description: `${existing.ur} via ${existing.rpt1}`
+                                })
+                            }
+                        }
                     }
                 } else if (ev.type === 'hearing' && ev.id && ev.my) {
                     // Critical: Sanitize and construct a clean Hearing object
@@ -112,7 +183,8 @@ export const useLiveStore = defineStore('live', () => {
                         protocol: ev.protocol || '',
                         created_at: ev.created_at || new Date().toISOString(),
                         duration: ev.duration || 0,
-                        status: ev.status === 'active' ? 'active' : 'ended'
+                        status: ev.status === 'active' ? 'active' : 'ended',
+                        audio_file: ev.recording || ev.audio_file // Accept both from event or history
                     }
 
                     lastHeard.value.unshift(newEntry)
@@ -142,5 +214,5 @@ export const useLiveStore = defineStore('live', () => {
         return !!activeSessions[id]
     }
 
-    return { lastHeard, connected, connect, activeSessions, isSessionActive }
+    return { lastHeard, connected, connect, activeSessions, isSessionActive, loadMoreHistory, endOfHistory, isLoadingMore }
 })

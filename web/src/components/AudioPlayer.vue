@@ -1,0 +1,376 @@
+<script setup lang="ts">
+import { ref, watch, computed } from 'vue'
+import { usePlayerStore } from '../stores/player'
+import { 
+  Play, 
+  Pause, 
+  SkipForward, 
+  SkipBack, 
+  Volume2, 
+  Activity
+} from 'lucide-vue-next'
+
+const player = usePlayerStore()
+const audioEl = ref<HTMLAudioElement | null>(null)
+
+// Computed
+const trackTitle = computed(() => {
+  if (!player.currentTrack) return 'Waiting for transmission...'
+  return `${player.currentTrack.callsign} (${player.currentTrack.module})`
+})
+
+const trackSubtitle = computed(() => {
+  if (!player.currentTrack) return 'Live Mode Active'
+  return player.currentTrack.description
+})
+
+// Web Audio API
+let audioContext: AudioContext | null = null
+let sourceNode: MediaElementAudioSourceNode | null = null
+let gainNode: GainNode | null = null
+let compressorNode: DynamicsCompressorNode | null = null
+let analyserNode: AnalyserNode | null = null
+
+// Canvas
+const canvasEl = ref<HTMLCanvasElement | null>(null)
+
+// Initialize Audio Context on first interaction or mount
+const initAudioContext = () => {
+    if (!audioContext && audioEl.value) {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+        audioContext = new AudioContextClass()
+        sourceNode = audioContext.createMediaElementSource(audioEl.value)
+        gainNode = audioContext.createGain()
+        compressorNode = audioContext.createDynamicsCompressor()
+        analyserNode = audioContext.createAnalyser()
+        
+        // Configure Analyser
+        analyserNode.fftSize = 256
+        
+        // Configure Compressor (Auto-Level)
+        compressorNode.threshold.value = -24
+        compressorNode.knee.value = 30
+        compressorNode.ratio.value = 12
+        compressorNode.attack.value = 0.003
+        compressorNode.release.value = 0.25
+
+        updateRouting()
+        draw()
+        
+        // Set initial volume
+        gainNode.gain.value = player.volume
+    } else if (audioContext?.state === 'suspended') {
+        audioContext.resume()
+    }
+}
+
+const updateRouting = () => {
+    if (!audioContext || !sourceNode || !gainNode || !compressorNode || !analyserNode) return
+    
+    // Disconnect everything
+    sourceNode.disconnect()
+    compressorNode.disconnect()
+    gainNode.disconnect()
+    analyserNode.disconnect()
+    
+    // Chain: Source -> [Compressor] -> Analyser -> Gain -> Destination
+    let currentNode: AudioNode = sourceNode
+
+    if (player.isAgcEnabled) {
+        sourceNode.connect(compressorNode)
+        currentNode = compressorNode
+    }
+
+    currentNode.connect(analyserNode)
+    analyserNode.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+}
+
+const draw = () => {
+    if (!canvasEl.value || !analyserNode) return
+
+    const canvas = canvasEl.value
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const bufferLength = analyserNode.frequencyBinCount
+    const dataArray = new Uint8Array(bufferLength)
+
+    const drawVisual = () => {
+        requestAnimationFrame(drawVisual)
+        
+        if (!analyserNode) return
+        analyserNode.getByteTimeDomainData(dataArray)
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0)' // Transparent clear
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+        ctx.lineWidth = 2
+        ctx.strokeStyle = '#3b82f6' // Blue-500
+        
+        // Dark mode adjustment if needed, but blue works on both
+        // Check for dark mode via class? Or just use a vibrant color.
+        
+        ctx.beginPath()
+
+        const sliceWidth = canvas.width * 1.0 / bufferLength
+        let x = 0
+
+        for (let i = 0; i < bufferLength; i++) {
+            const val = dataArray[i] ?? 128
+            const v = val / 128.0
+            const y = v * canvas.height / 2
+
+            if (i === 0) {
+                ctx.moveTo(x, y)
+            } else {
+                ctx.lineTo(x, y)
+            }
+
+            x += sliceWidth
+        }
+
+        ctx.lineTo(canvas.width, canvas.height / 2)
+        ctx.stroke()
+    }
+
+    drawVisual()
+}
+
+// Watchers
+watch(() => player.isAgcEnabled, () => {
+    updateRouting()
+})
+
+// Playback Blocked State
+const isBlocked = ref(false)
+
+const attemptPlay = async () => {
+    if (!audioEl.value) return
+    try {
+        await audioEl.value.play()
+        isBlocked.value = false
+    } catch (e: any) {
+        console.error("Playback failed", e)
+        if (e.name === 'NotAllowedError') {
+            isBlocked.value = true
+        }
+    }
+}
+
+watch(() => player.currentTrack, (newTrack) => {
+  if (newTrack && audioEl.value) {
+    audioEl.value.src = newTrack.url
+    initAudioContext() // Ensure context is ready
+    if (player.isPlaying) {
+      attemptPlay()
+    }
+    updateMediaSession()
+  }
+})
+
+watch(() => player.isPlaying, (playing) => {
+  if (!audioEl.value) return
+  initAudioContext() // Ensure context is ready
+  if (playing) {
+      // Check if we have source
+      if (audioEl.value.src) {
+        attemptPlay()
+      }
+  } else {
+    audioEl.value.pause()
+    isBlocked.value = false
+  }
+  updateMediaSession()
+})
+
+watch(() => player.volume, (vol) => {
+    // If using Web Audio API
+    if (gainNode) {
+        gainNode.gain.value = vol
+    } else if (audioEl.value) {
+        // Fallback (though initAudioContext should have run)
+        audioEl.value.volume = Math.min(vol, 1.0)
+    }
+})
+
+// Handlers
+const onTimeUpdate = () => {
+  if (audioEl.value) {
+    player.currentTime = audioEl.value.currentTime
+    player.duration = audioEl.value.duration
+  }
+}
+
+const onEnded = () => {
+  player.onTrackEnd()
+}
+
+const togglePlay = () => {
+    player.togglePlay()
+}
+
+// Media Session API
+const updateMediaSession = () => {
+    if (!('mediaSession' in navigator) || !player.currentTrack) return
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+        title: player.currentTrack.callsign,
+        artist: player.currentTrack.description,
+        album: `Module ${player.currentTrack.module}`,
+        artwork: [
+            { src: '/icon.png', sizes: '96x96', type: 'image/png' },
+            { src: '/icon.png', sizes: '128x128', type: 'image/png' },
+            { src: '/icon.png', sizes: '192x192', type: 'image/png' },
+            { src: '/icon.png', sizes: '512x512', type: 'image/png' },
+        ]
+    })
+
+    navigator.mediaSession.setActionHandler('play', () => {
+        player.togglePlay()
+    })
+    navigator.mediaSession.setActionHandler('pause', () => {
+        player.togglePlay()
+    })
+    navigator.mediaSession.setActionHandler('previoustrack', () => {
+        player.playPrevious()
+    })
+    navigator.mediaSession.setActionHandler('nexttrack', () => {
+        player.playNext()
+    })
+}
+
+const toggleLive = () => {
+    player.toggleLiveMode()
+}
+
+const seek = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (audioEl.value) {
+    audioEl.value.currentTime = parseFloat(target.value)
+  }
+}
+
+const formatTime = (seconds: number) => {
+  if (!seconds || isNaN(seconds)) return "0:00"
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+</script>
+
+<template>
+  <div class="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shadow-lg z-50 transition-transform duration-300"
+       :class="{'translate-y-full': !player.currentTrack && !player.isLiveMode}">
+    
+    <!-- Audio Element (Hidden) -->
+    <audio ref="audioEl" 
+           @timeupdate="onTimeUpdate" 
+           @ended="onEnded"
+           preload="auto"></audio>
+
+    <!-- Resume Overlay for Autoplay Block -->
+    <div v-if="isBlocked" 
+         class="absolute inset-x-0 -top-12 flex justify-center pointer-events-none z-50">
+        <button @click="attemptPlay" 
+                class="pointer-events-auto bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg font-bold text-sm flex items-center gap-2 animate-bounce">
+            <Play :size="16" class="fill-current" />
+            Tap to Resume Playback
+        </button>
+    </div>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+      <div class="flex items-center gap-4">
+        
+        <!-- Track Info -->
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-bold text-slate-900 dark:text-white truncate">
+              {{ trackTitle }}
+            </h3>
+            <span v-if="player.isLiveMode" 
+                  class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 animate-pulse">
+              LIVE
+            </span>
+          </div>
+          <div v-if="player.isRecording && !player.isPlaying" class="flex items-center gap-2" title="Recording in progress. Audio will be available shortly.">
+             <div class="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse"></div>
+            <span class="text-xs font-bold text-red-600 dark:text-red-400">REC</span>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400 truncate">
+            {{ trackSubtitle }}
+          </p>
+        </div>
+
+        <!-- Oscilloscope -->
+        <div class="hidden md:block w-24 h-10 flex-shrink-0">
+            <canvas ref="canvasEl" width="100" height="40" class="w-full h-full"></canvas>
+        </div>
+
+        <!-- Controls (Center) -->
+        <div class="flex flex-col items-center gap-1 flex-1">
+          <div class="flex items-center gap-4">
+            <button @click="player.playPrevious()" 
+                    class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                    title="Previous Recording">
+              <SkipBack :size="20" />
+            </button>
+
+            <button @click="togglePlay" 
+                    class="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-md transition-transform active:scale-95 flex items-center justify-center">
+              <Pause v-if="player.isPlaying" :size="24" class="fill-current" />
+              <Play v-else :size="24" class="fill-current ml-0.5" />
+            </button>
+
+            <button @click="player.playNext()" 
+                    class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                    title="Next Recording">
+              <SkipForward :size="20" />
+            </button>
+          </div>
+        </div>
+
+        <!-- Live Mode & Volume -->
+        <div class="flex items-center gap-4 flex-1 justify-end">
+            <button @click="toggleLive" 
+                    class="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors"
+                    :class="player.isLiveMode ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'">
+                <Activity :size="14" />
+                <span>{{ player.isLiveMode ? 'LIVE' : 'OFF' }}</span>
+            </button>
+
+            <button @click="player.toggleAgc()" 
+                    class="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors"
+                    :class="player.isAgcEnabled ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'"
+                    title="Auto-Leveling (AGC)">
+                <Activity :size="14" class="rotate-90" />
+                <span>AGC</span>
+            </button>
+
+            <div class="hidden sm:flex items-center gap-2 w-24">
+                <Volume2 :size="16" class="text-slate-400" />
+                <input type="range" 
+                       min="0" max="3" step="0.1" 
+                       v-model.number="player.volume"
+                       class="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600">
+            </div>
+        </div>
+      </div>
+
+      <!-- Scrubber -->
+      <div class="flex items-center gap-3 mt-2 text-xs text-slate-400 font-mono">
+        <span>{{ formatTime(player.currentTime) }}</span>
+        <div class="relative flex-1 h-3 group flex items-center">
+            <input type="range" 
+                   :min="0" 
+                   :max="player.duration || 100" 
+                   :value="player.currentTime"
+                   @input="seek"
+                   class="absolute w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600 z-10">
+                   <!-- Buffer bar logic could go here -->
+        </div>
+        <span>{{ formatTime(player.duration) }}</span>
+      </div>
+    </div>
+  </div>
+</template>

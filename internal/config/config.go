@@ -10,6 +10,7 @@ type Config struct {
 	Server    ServerConfig    `mapstructure:"server" json:"server"`
 	Reflector ReflectorConfig `mapstructure:"reflector" json:"reflector"`
 	Logging   LoggingConfig   `mapstructure:"logging" json:"logging"`
+	Audio     AudioConfig     `mapstructure:"audio" json:"audio"`
 }
 
 type ServerConfig struct {
@@ -32,6 +33,11 @@ type LoggingConfig struct {
 	MaxAgeDays int    `mapstructure:"max_age_days"`
 	Compress   bool   `mapstructure:"compress"`
 	Console    bool   `mapstructure:"console"`
+}
+
+type AudioConfig struct {
+	Enable bool   `mapstructure:"enable" json:"enable"`
+	Path   string `mapstructure:"path" json:"path"`
 }
 
 func LoadConfig(path string) (*Config, error) {

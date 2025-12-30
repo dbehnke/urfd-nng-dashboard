@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -179,8 +180,13 @@ func main() {
 					ev.Status = "active"
 				} else if ev.Type == "closing" && exists {
 					duration := time.Since(sess.StartTime).Seconds()
-					if err := s.DB.Model(&store.Hearing{}).Where("id = ?", sess.ID).Update("duration", duration).Error; err != nil {
-						logger.Log.Error("Failed to update session duration", zap.Error(err))
+					updates := map[string]interface{}{"duration": duration}
+					if ev.Recording != "" {
+						updates["audio_file"] = ev.Recording
+					}
+
+					if err := s.DB.Model(&store.Hearing{}).Where("id = ?", sess.ID).Updates(updates).Error; err != nil {
+						logger.Log.Error("Failed to update session", zap.Error(err))
 					}
 					ev.ID = sess.ID
 					ev.Status = "ended"
@@ -191,6 +197,11 @@ func main() {
 					ev.Protocol = sess.Protocol
 					ev.Ur = sess.Ur
 					ev.Rpt2 = sess.Rpt2
+					ev.Protocol = sess.Protocol
+					ev.Ur = sess.Ur
+					ev.Rpt2 = sess.Rpt2
+					// ev.Recording is already set from Unmarshal if present
+					// and persisted to DB above. It will be broadcasted below.
 
 					// Clean up all sessions for this callsign to be safe
 					for k, s := range sessions {
@@ -325,11 +336,44 @@ func main() {
 
 	// API Routes
 	http.HandleFunc("/api/history", func(w http.ResponseWriter, r *http.Request) {
+		// Parse query params
+		query := r.URL.Query()
+		limit := 50
+		if l := query.Get("limit"); l != "" {
+			if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
+				limit = parsed
+			}
+		}
+
+		cursor := 0
+		if c := query.Get("cursor"); c != "" {
+			if parsed, err := strconv.Atoi(c); err == nil {
+				cursor = parsed
+			}
+		}
+
+		// Enforce 48-hour limit
+		since := time.Now().Add(-48 * time.Hour)
+		if s := query.Get("since"); s != "" {
+			if parsed, err := time.Parse(time.RFC3339, s); err == nil {
+				if parsed.After(since) {
+					since = parsed
+				}
+			}
+		}
+
 		var hearings []store.Hearing
-		if err := s.DB.Order("id desc").Limit(50).Find(&hearings).Error; err != nil {
+		dbQuery := s.DB.Order("id desc").Where("created_at > ?", since).Limit(limit)
+
+		if cursor > 0 {
+			dbQuery = dbQuery.Where("id < ?", cursor)
+		}
+
+		if err := dbQuery.Find(&hearings).Error; err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(hearings); err != nil {
 			logger.Log.Error("Failed to encode history response", zap.Error(err))
@@ -358,6 +402,16 @@ func main() {
 	}
 
 	logger.Log.Info("HTTP server starting", zap.String("addr", cfg.Server.Addr))
+
+	// Serve Audio Files
+	if cfg.Audio.Enable && cfg.Audio.Path != "" {
+		logger.Log.Info("Serving audio files", zap.String("path", cfg.Audio.Path), zap.String("url", "/audio/"))
+		// Use http.FileServer to serve files from the directory
+		fs := http.FileServer(http.Dir(cfg.Audio.Path))
+		// Strip the /audio/ prefix so the file server sees the relative path
+		http.Handle("/audio/", http.StripPrefix("/audio/", fs))
+	}
+
 	if err := srv.Start(cfg.Server.Addr); err != nil {
 		logger.Log.Fatal("Server failed", zap.Error(err))
 	}
