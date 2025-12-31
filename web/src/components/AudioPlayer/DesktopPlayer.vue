@@ -69,6 +69,16 @@ const formatTime = (seconds: number) => {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+const formatPlaylistTime = (ts: number) => {
+    if (!ts) return ''
+    const d = new Date(ts)
+    const now = new Date()
+    const isToday = d.getDate() === now.getDate() && d.getMonth() === now.getMonth()
+    
+    if (isToday) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    return d.toLocaleDateString([], { month: 'numeric', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
 // Quick fix: Add seek logic later. For now, read-only scrubber or Engine needs to watch currentTime?
 // Watching currentTime in Engine is circular.
 // Use `player.seek(time)` action.
@@ -169,29 +179,30 @@ const formatTime = (seconds: number) => {
            <div class="px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider sticky top-0 bg-slate-900/90 backdrop-blur z-10">
                Up Next
            </div>
-           <div v-for="(track, index) in player.playlist" :key="track.id" 
-                @click="player.play(track, player.playlist)"
-                class="px-4 py-3 flex items-center justify-between hover:bg-white/5 cursor-pointer transition-colors border-b border-white/5 last:border-0"
-                :class="{'bg-blue-500/10': player.currentTrack?.id === track.id}">
-                
-                <div class="flex items-center gap-3">
-                    <div class="w-8 text-center text-xs font-mono text-slate-600">
-                        {{ index + 1 }}
-                    </div>
-                    <div>
-                        <div class="text-sm font-medium text-slate-200" :class="{'text-blue-400': player.currentTrack?.id === track.id}">
-                            {{ track.callsign }}
-                        </div>
-                        <div class="text-xs text-slate-500">
-                            Module {{ track.module }} &middot; {{ formatTime(track.duration) }}
-                        </div>
-                    </div>
-                </div>
+           <div v-for="(track, index) in [...player.playlist].reverse()" :key="track.id" 
+                 @click="player.play(track, player.playlist)"
+                 class="px-4 py-3 flex items-center justify-between hover:bg-white/5 cursor-pointer transition-colors border-b border-white/5 last:border-0"
+                 :class="{'bg-blue-500/10': player.currentTrack?.id === track.id}">
+                 
+                 <div class="flex items-center gap-3">
+                     <div class="w-8 text-center text-xs font-mono text-slate-600">
+                         {{ player.playlist.length - index }}
+                     </div>
+                     <div>
+                         <div class="text-sm font-medium text-slate-200" :class="{'text-blue-400': player.currentTrack?.id === track.id}">
+                             {{ track.callsign }}
+                         </div>
+                         <div class="text-xs text-slate-500 flex items-center gap-2">
+                             <span>Module {{ track.module }} &middot; {{ formatTime(track.duration) }}</span>
+                             <span v-if="track.timestamp" class="text-slate-600">&middot; {{ formatPlaylistTime(track.timestamp) }}</span>
+                         </div>
+                     </div>
+                 </div>
 
-                <div v-if="player.currentTrack?.id === track.id" class="text-blue-400">
-                    <Activity :size="16" class="animate-pulse" />
-                </div>
-           </div>
+                 <div v-if="player.currentTrack?.id === track.id" class="text-blue-400">
+                     <Activity :size="16" class="animate-pulse" />
+                 </div>
+            </div>
        </div>
 
   </div>

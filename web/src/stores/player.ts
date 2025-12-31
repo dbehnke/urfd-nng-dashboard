@@ -8,6 +8,7 @@ export interface Track {
     module: string
     duration: number
     description: string
+    timestamp: number
 }
 
 export const usePlayerStore = defineStore('player', () => {

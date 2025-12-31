@@ -116,7 +116,8 @@ export const useLiveStore = defineStore('live', () => {
                                 callsign: h.my,
                                 module: h.module,
                                 duration: h.duration || 0,
-                                description: `${h.ur} via ${h.rpt1}`
+                                description: `${h.ur} via ${h.rpt1}`,
+                                timestamp: new Date(h.created_at || Date.now()).getTime()
                             })
                         }
                     }
@@ -165,7 +166,8 @@ export const useLiveStore = defineStore('live', () => {
                                     callsign: existing.my,
                                     module: existing.module,
                                     duration: existing.duration || 0,
-                                    description: `${existing.ur} via ${existing.rpt1}`
+                                    description: `${existing.ur} via ${existing.rpt1}`,
+                                    timestamp: new Date(existing.created_at || Date.now()).getTime()
                                 })
                             }
                         }

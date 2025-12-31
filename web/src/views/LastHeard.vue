@@ -146,7 +146,8 @@ const playAudio = (file: string) => {
               callsign: h.my,
               module: h.module,
               duration: h.duration || 0,
-              description: `${h.ur} via ${h.rpt1}`
+              description: `${h.ur} via ${h.rpt1}`,
+              timestamp: parseDate(h.created_at)
           }))
 
       player.play({
@@ -155,7 +156,8 @@ const playAudio = (file: string) => {
           callsign: entry.my,
           module: entry.module,
           duration: entry.duration || 0,
-          description: `${entry.ur} via ${entry.rpt1}`
+          description: `${entry.ur} via ${entry.rpt1}`,
+          timestamp: parseDate(entry.created_at)
       }, playlist)
   }
 }
