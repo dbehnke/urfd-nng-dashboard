@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { usePlayerStore } from '../../stores/player'
 import { 
   Play, 
@@ -79,6 +79,32 @@ const formatPlaylistTime = (ts: number) => {
     return d.toLocaleDateString([], { month: 'numeric', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+const playlistContainer = ref<HTMLElement | null>(null)
+const trackRefs = ref<Record<number, HTMLElement>>({})
+
+const setTrackRef = (el: any, id: number) => {
+    if (el) trackRefs.value[id] = el
+}
+
+// Auto-scroll playlist to current track
+watch(() => player.currentTrack, async (newTrack) => {
+    if (!newTrack) return
+    await nextTick()
+    const el = trackRefs.value[newTrack.id]
+    if (el && playlistContainer.value) {
+        // Scroll with some padding to keep it centered
+        const container = playlistContainer.value
+        const top = el.offsetTop - container.offsetTop
+        const height = el.offsetHeight
+        const containerHeight = container.clientHeight
+        
+        container.scrollTo({
+            top: top - (containerHeight / 2) + (height / 2),
+            behavior: 'smooth'
+        })
+    }
+}, { immediate: true })
+
 // Quick fix: Add seek logic later. For now, read-only scrubber or Engine needs to watch currentTime?
 // Watching currentTime in Engine is circular.
 // Use `player.seek(time)` action.
@@ -96,9 +122,7 @@ const formatPlaylistTime = (ts: number) => {
            </button>
        </div>
 
-       <!-- Timeline -->
-       <Timeline />
-       
+
        <!-- Main Player Info -->
        <div class="p-6">
            <div class="flex items-start justify-between gap-4">
@@ -174,22 +198,30 @@ const formatPlaylistTime = (ts: number) => {
            </div>
        </div>
 
+       <!-- Timeline (Moved Here) -->
+       <Timeline />
+
        <!-- Playlist (Simple List) -->
-       <div class="border-t border-slate-800 max-h-[300px] overflow-y-auto bg-slate-950/50">
+       <div class="border-t border-slate-800 max-h-[300px] overflow-y-auto bg-slate-950/50" ref="playlistContainer">
            <div class="px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider sticky top-0 bg-slate-900/90 backdrop-blur z-10">
                Up Next
            </div>
            <div v-for="(track, index) in [...player.playlist].reverse()" :key="track.id" 
+                 :ref="(el) => setTrackRef(el, track.id)"
                  @click="player.play(track, player.playlist)"
-                 class="px-4 py-3 flex items-center justify-between hover:bg-white/5 cursor-pointer transition-colors border-b border-white/5 last:border-0"
-                 :class="{'bg-blue-500/10': player.currentTrack?.id === track.id}">
+                 class="px-4 py-3 flex items-center justify-between hover:bg-white/5 cursor-pointer transition-colors border-b border-white/5 last:border-0 relative"
+                 :class="{'bg-slate-900': player.currentTrack?.id === track.id}">
                  
-                 <div class="flex items-center gap-3">
-                     <div class="w-8 text-center text-xs font-mono text-slate-600">
+                 <!-- Active Indicator Line -->
+                 <div v-if="player.currentTrack?.id === track.id" 
+                      class="absolute left-0 top-0 bottom-0 w-1 bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]"></div>
+
+                 <div class="flex items-center gap-3 pl-2">
+                     <div class="w-8 text-center text-xs font-mono" :class="player.currentTrack?.id === track.id ? 'text-red-400 font-bold' : 'text-slate-600'">
                          {{ player.playlist.length - index }}
                      </div>
                      <div>
-                         <div class="text-sm font-medium text-slate-200" :class="{'text-blue-400': player.currentTrack?.id === track.id}">
+                         <div class="text-sm font-medium text-slate-200" :class="{'text-red-400': player.currentTrack?.id === track.id}">
                              {{ track.callsign }}
                          </div>
                          <div class="text-xs text-slate-500 flex items-center gap-2">
@@ -199,7 +231,7 @@ const formatPlaylistTime = (ts: number) => {
                      </div>
                  </div>
 
-                 <div v-if="player.currentTrack?.id === track.id" class="text-blue-400">
+                 <div v-if="player.currentTrack?.id === track.id" class="text-red-500">
                      <Activity :size="16" class="animate-pulse" />
                  </div>
             </div>
