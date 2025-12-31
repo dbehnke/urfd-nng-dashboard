@@ -19,7 +19,7 @@ const blocks = computed(() => {
     return list.map(track => {
         const width = Math.max(MIN_BLOCK_WIDTH, track.duration * PIXELS_PER_SECOND)
         const isCurrent = player.currentTrack?.id === track.id
-        const isCurrent = player.currentTrack?.id === track.id
+
         // Wait, if playing Index K. 
         // Oldest is Index N. 
         // Newest is Index 0.

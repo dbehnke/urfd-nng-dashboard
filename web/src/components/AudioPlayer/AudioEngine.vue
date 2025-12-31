@@ -39,10 +39,10 @@ const initAudioContext = () => {
         compressorNode.attack.value = 0.003
         compressorNode.release.value = 0.25
 
-        updateRouting()
+        updateRouting();
         
         // Initial volume
-        gainNode.gain.value = player.volume
+        gainNode.gain.value = player.volume;
         
         // Share analyser with Store? Or attach to window for components to find?
         // Ideally pass via provide/inject if components are children?
