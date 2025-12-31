@@ -265,7 +265,7 @@ watch(() => player.currentTrack, async (newTrack) => {
        </div>
 
        <!-- Timeline (Moved Here) -->
-       <Timeline />
+       <Timeline :filter="selectedModule" />
 
        <!-- Playlist (Simple List) -->
        <div class="border-t border-slate-200 dark:border-slate-800 flex-1 overflow-y-auto bg-slate-50/50 dark:bg-slate-950/50" ref="playlistContainer">
@@ -277,9 +277,9 @@ watch(() => player.currentTrack, async (newTrack) => {
                    <option v-for="m in availableModules" :key="m" :value="m">{{ m }}</option>
                </select>
            </div>
-           <div v-for="(track) in visiblePlaylist" :key="track.id" 
+           <div v-for="(track, index) in visiblePlaylist" :key="track.id" 
                  :ref="(el) => setTrackRef(el, track.id)"
-                 @click="player.play(track, player.playlist)"
+                 @click="player.play(track, player.playlist, true)"
                  class="px-4 py-3 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors border-b border-slate-200 dark:border-white/5 last:border-0 relative"
                  :class="{'bg-slate-100 dark:bg-slate-900': player.currentTrack?.id === track.id}">
                  
@@ -302,6 +302,11 @@ watch(() => player.currentTrack, async (newTrack) => {
                  <div v-if="player.currentTrack?.id === track.id" class="text-red-500">
                      <Activity :size="16" class="animate-pulse" />
                  </div>
+                 <!-- Count to Live (Index) -->
+                 <div v-else class="text-xs font-mono font-bold text-slate-300 dark:text-slate-700">
+                     {{ visiblePlaylist.length - 1 - index > 0 ? visiblePlaylist.length - 1 - index : 'LIVE' }}
+                 </div>
+
             </div>
        </div>
 

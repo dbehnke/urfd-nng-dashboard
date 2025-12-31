@@ -28,16 +28,16 @@ export const usePlayerStore = defineStore('player', () => {
     const isUIOpen = ref(false)
 
     // Actions
-    const play = (track: Track, context: Track[] = []) => {
+    const play = (track: Track, context: Track[] = [], autoOpen: boolean = false) => {
         currentTrack.value = track
         isPlaying.value = true
+        currentTime.value = 0 // Reset time immediately to prevent UI flicker
         if (context.length > 0) {
-            playlist.value = [...context] // Copy context
-            // Sort by time DESC just in case? LastHeard is usually sorted.
-            // Let's assume input is sorted Newest -> Oldest.
+            playlist.value = [...context]
         }
-        // Auto-open UI on manual play
-        isUIOpen.value = true
+        if (autoOpen) {
+            isUIOpen.value = true
+        }
     }
 
     const toggleUI = () => {
@@ -74,7 +74,7 @@ export const usePlayerStore = defineStore('player', () => {
         if (isLiveMode.value) {
             // Live Mode: Auto-play if not busy
             if (!isPlaying.value) {
-                play(track)
+                play(track, [], false) // Don't auto-open on live incoming
             } else {
                 // Busy playing something else?
                 // If we are "Live", we generally want to hear the latest.
@@ -91,7 +91,7 @@ export const usePlayerStore = defineStore('player', () => {
         if (isLiveMode.value && queue.value.length > 0) {
             const next = queue.value.shift()
             if (next) {
-                play(next)
+                play(next, [], false)
                 return
             }
         }
@@ -116,7 +116,7 @@ export const usePlayerStore = defineStore('player', () => {
 
         if (idx > 0) {
             const nextTrack = playlist.value[idx - 1]
-            if (nextTrack) play(nextTrack, playlist.value) // Keep existing playlist
+            if (nextTrack) play(nextTrack, playlist.value, false) // Keep existing playlist, don't force open
         } else {
             // We are at Index 0 (Newest).
             // Nothing newer.
@@ -135,7 +135,10 @@ export const usePlayerStore = defineStore('player', () => {
         const idx = playlist.value.findIndex(t => t.id === currentTrack.value?.id)
         if (idx !== -1 && idx < playlist.value.length - 1) {
             const prevTrack = playlist.value[idx + 1]
-            if (prevTrack) play(prevTrack, [])
+            // Previous usually intentional, but if minimized maybe kept minimized?
+            // "Prevent Player Pop-up on sequential track change"
+            // Previous is usually user initiated, but let's stick to consistent non-pop.
+            if (prevTrack) play(prevTrack, [], false)
         }
     }
 

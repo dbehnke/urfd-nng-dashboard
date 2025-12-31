@@ -158,7 +158,7 @@ const playAudio = (file: string) => {
           duration: entry.duration || 0,
           description: `${entry.ur} via ${entry.rpt1}`,
           timestamp: parseDate(entry.created_at)
-      }, playlist)
+      }, playlist, true)
   }
 }
 
