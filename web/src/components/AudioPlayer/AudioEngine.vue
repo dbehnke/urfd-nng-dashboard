@@ -106,6 +106,7 @@ const attemptPlay = async () => {
 watch(() => player.currentTrack, (newTrack) => {
   if (newTrack && audioEl.value) {
     audioEl.value.src = newTrack.url
+    audioEl.value.currentTime = 0 // Force start from beginning
     initAudioContext() 
     if (player.isPlaying) {
       attemptPlay()
