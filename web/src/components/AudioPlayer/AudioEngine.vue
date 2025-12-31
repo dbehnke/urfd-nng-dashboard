@@ -130,8 +130,31 @@ watch(() => player.isPlaying, (playing) => {
 // Handlers
 const onTimeUpdate = () => {
   if (audioEl.value) {
-    player.currentTime = audioEl.value.currentTime
-    player.duration = audioEl.value.duration
+    let offset = 0
+    let rawDuration = audioEl.value.duration
+    
+    // Attempt to find start time from seekable ranges
+    if (audioEl.value.seekable.length > 0) {
+        offset = audioEl.value.seekable.start(0)
+        // Adjust duration to be relative to start
+        // Use seekable end if reliable, or duration
+        // Often duration matches seekable.end(0)
+    }
+
+    // Safety fallback: if currentTime > duration + 10s (and duration is small), 
+    // it implies an offset we missed or seekable isn't ready.
+    // However, correcting it dynamically is risky. 
+    // Let's rely on seekable logic first.
+    
+    const normalizedTime = Math.max(0, audioEl.value.currentTime - offset)
+    const normalizedDuration = Math.max(0, rawDuration - offset)
+    
+    player.currentTime = normalizedTime
+    
+    // Only update duration if it's finite
+    if (Number.isFinite(normalizedDuration)) {
+        player.duration = normalizedDuration
+    }
   }
 }
 
