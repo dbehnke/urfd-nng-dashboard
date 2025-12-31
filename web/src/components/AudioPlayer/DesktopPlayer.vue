@@ -215,13 +215,9 @@ watch(() => player.currentTrack, async (newTrack) => {
                </div>
            </div>
 
-           <!-- Progress -->
-           <div class="mt-6 flex items-center gap-3 text-xs font-mono text-slate-500">
-               <span>{{ formatTime(player.currentTime) }}</span>
-               <div class="flex-1 h-1 bg-slate-800 rounded-full relative overflow-hidden">
-                   <div class="absolute top-0 left-0 h-full bg-blue-500 rounded-full w-0"
-                        :style="{ width: `${(player.currentTime / (player.duration || 1)) * 100}%` }"></div>
-               </div>
+           <!-- Progress Info (No Bar) -->
+           <div class="mt-6 flex items-center justify-between text-xs font-mono text-slate-500">
+               <span>{{ formatTime(player.currentTime) }} <span class="text-slate-400 dark:text-slate-600">/</span> {{ formatTime(player.duration) }}</span>
                <span :class="{'text-red-500 font-bold': timeToLive === 'LIVE'}">{{ timeToLive }}</span>
            </div>
 
