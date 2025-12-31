@@ -146,7 +146,8 @@ const playAudio = (file: string) => {
               callsign: h.my,
               module: h.module,
               duration: h.duration || 0,
-              description: `${h.ur} via ${h.rpt1}`
+              description: `${h.ur} via ${h.rpt1}`,
+              timestamp: parseDate(h.created_at)
           }))
 
       player.play({
@@ -155,10 +156,13 @@ const playAudio = (file: string) => {
           callsign: entry.my,
           module: entry.module,
           duration: entry.duration || 0,
-          description: `${entry.ur} via ${entry.rpt1}`
-      }, playlist)
+          description: `${entry.ur} via ${entry.rpt1}`,
+          timestamp: parseDate(entry.created_at)
+      }, playlist, true)
   }
 }
+
+import MobilePlayer from '../components/AudioPlayer/MobilePlayer.vue'
 </script>
 
 <template>
@@ -196,6 +200,9 @@ const playAudio = (file: string) => {
 
     <!-- Mobile Card View (Visible < 640px) -->
     <div class="block sm:hidden space-y-4">
+      <!-- Top Card Player -->
+      <MobilePlayer />
+
       <div v-for="entry in filteredEntries" :key="entry.id"
            @click="entry.audio_file && playAudio(entry.audio_file)"
            class="bg-white dark:bg-slate-900 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-800 relative overflow-hidden transition-all duration-300 active:scale-95"
