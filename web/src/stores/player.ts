@@ -66,7 +66,7 @@ export const usePlayerStore = defineStore('player', () => {
         // Add to playlist logic
         // If we have a playlist active, this new track belongs at the start (Newest)
         // Check if track is already there?
-        if (playlist.value.length > 0 && playlist.value[0].id !== track.id) {
+        if (playlist.value.length > 0 && playlist.value[0]?.id !== track.id) {
             playlist.value.unshift(track)
         }
 
