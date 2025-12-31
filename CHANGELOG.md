@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.4.0...v1.5.0) (2025-12-31)
+
+
+### Features
+
+* Redesign Audio Player (Timeline + Mobile Card) ([#13](https://github.com/dbehnke/urfd-nng-dashboard/issues/13)) ([50b8c17](https://github.com/dbehnke/urfd-nng-dashboard/commit/50b8c17b5123a6f69e491fcec7443d376f11afc4))
+
 ## [1.4.0](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.3.0...v1.4.0) (2025-12-30)
 
 
