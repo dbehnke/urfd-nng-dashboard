@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue'
 import { usePlayerStore } from '../../stores/player'
 import { 
   Play, 
@@ -14,6 +14,40 @@ import {
 import Timeline from './Timeline.vue'
 
 const player = usePlayerStore()
+
+const currentIndex = computed(() => {
+    if (!player.currentTrack) return -1
+    return player.playlist.findIndex(t => t.id === player.currentTrack?.id)
+})
+
+const visiblePlaylist = computed(() => {
+    if (currentIndex.value === -1) return [...player.playlist].reverse()
+    // Show all newer tracks (0 to current) + 10 older tracks
+    // Playlist is [Newest ... Oldest]
+    // Slice (0, current + 11) gets Newest -> Current+10
+    const end = Math.min(player.playlist.length, currentIndex.value + 11)
+    return player.playlist.slice(0, end).reverse()
+})
+
+const timeToLive = computed(() => {
+    if (!player.currentTrack) return "0:00"
+    
+    let totalSeconds = 0
+    
+    // Remaining time in current track
+    if (player.duration > player.currentTime) {
+        totalSeconds += (player.duration - player.currentTime)
+    }
+    
+    // Duration of all newer tracks (Indices 0 to current-1)
+    if (currentIndex.value > 0) {
+        const newerTracks = player.playlist.slice(0, currentIndex.value)
+        totalSeconds += newerTracks.reduce((sum, t) => sum + t.duration, 0)
+    }
+    
+    if (totalSeconds < 1) return "LIVE"
+    return "-" + formatTime(totalSeconds)
+})
 
 const canvasEl = ref<HTMLCanvasElement | null>(null)
 let animationFrame: number
@@ -156,7 +190,7 @@ watch(() => player.currentTrack, async (newTrack) => {
                    <div class="absolute top-0 left-0 h-full bg-blue-500 rounded-full w-0"
                         :style="{ width: `${(player.currentTime / (player.duration || 1)) * 100}%` }"></div>
                </div>
-               <span>{{ formatTime(player.duration) }}</span>
+               <span :class="{'text-red-500 font-bold': timeToLive === 'LIVE'}">{{ timeToLive }}</span>
            </div>
 
            <!-- Controls -->
@@ -206,7 +240,7 @@ watch(() => player.currentTrack, async (newTrack) => {
            <div class="px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider sticky top-0 bg-slate-900/90 backdrop-blur z-10">
                Up Next
            </div>
-           <div v-for="(track, index) in [...player.playlist].reverse()" :key="track.id" 
+           <div v-for="(track) in visiblePlaylist" :key="track.id" 
                  :ref="(el) => setTrackRef(el, track.id)"
                  @click="player.play(track, player.playlist)"
                  class="px-4 py-3 flex items-center justify-between hover:bg-white/5 cursor-pointer transition-colors border-b border-white/5 last:border-0 relative"
@@ -217,9 +251,6 @@ watch(() => player.currentTrack, async (newTrack) => {
                       class="absolute left-0 top-0 bottom-0 w-1 bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]"></div>
 
                  <div class="flex items-center gap-3 pl-2">
-                     <div class="w-8 text-center text-xs font-mono" :class="player.currentTrack?.id === track.id ? 'text-red-400 font-bold' : 'text-slate-600'">
-                         {{ player.playlist.length - index }}
-                     </div>
                      <div>
                          <div class="text-sm font-medium text-slate-200" :class="{'text-red-400': player.currentTrack?.id === track.id}">
                              {{ track.callsign }}
