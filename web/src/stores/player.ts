@@ -24,12 +24,23 @@ export const usePlayerStore = defineStore('player', () => {
     const isRecording = ref(false)
 
     // Actions
+    const isUIOpen = ref(false)
+
+    // Actions
     const play = (track: Track, context: Track[] = []) => {
         currentTrack.value = track
         isPlaying.value = true
         if (context.length > 0) {
-            playlist.value = context
+            playlist.value = [...context] // Copy context
+            // Sort by time DESC just in case? LastHeard is usually sorted.
+            // Let's assume input is sorted Newest -> Oldest.
         }
+        // If playing, ensure UI is open? Or maybe just for explicit user actions?
+        // Let's leave UI control manual for now, or auto-open on manual play.
+    }
+
+    const toggleUI = () => {
+        isUIOpen.value = !isUIOpen.value
     }
 
     const togglePlay = () => {
@@ -38,6 +49,13 @@ export const usePlayerStore = defineStore('player', () => {
 
     const toggleLiveMode = () => {
         isLiveMode.value = !isLiveMode.value
+        if (isLiveMode.value) {
+            // If returning to live mode, check if we need to catch up?
+            // Usually means "Stop playing old stuff, wait for new stuff"
+            currentTrack.value = null
+            isPlaying.value = false
+            queue.value = []
+        }
     }
 
     const toggleAgc = () => {
@@ -45,67 +63,78 @@ export const usePlayerStore = defineStore('player', () => {
     }
 
     const handleNewRecording = (track: Track) => {
+        // Add to playlist logic
+        // If we have a playlist active, this new track belongs at the start (Newest)
+        // Check if track is already there?
+        if (playlist.value.length > 0 && playlist.value[0].id !== track.id) {
+            playlist.value.unshift(track)
+        }
+
         if (isLiveMode.value) {
-            // New items are conceptually "first" in the playlist if it's reverse chrono.
-            // If we are playing, and not busy, we play it.
-            // If busy, we queue it.
+            // Live Mode: Auto-play if not busy
             if (!isPlaying.value) {
                 play(track)
             } else {
+                // Busy playing something else?
+                // If we are "Live", we generally want to hear the latest.
+                // But if we are mid-track, maybe queue it.
                 queue.value.push(track)
             }
+        } else {
+            // History Mode: Just added to playlist (above), user will reach it eventually.
         }
     }
 
     const onTrackEnd = () => {
-        // Priority: Queue (Live Mode) -> Next in Playlist
-        if (queue.value.length > 0) {
+        // Priority: Queue (Live Mode) -> Next in Playlist (Newer)
+        if (isLiveMode.value && queue.value.length > 0) {
             const next = queue.value.shift()
             if (next) {
-                // Keep context if we want, or just play
                 play(next)
                 return
             }
         }
 
-        // Auto-advance in playlist if Live Mode is OFF? Or usually if user clicked from list
-        // "Next" in a list usually means "Next item". In a detailed list, that is index + 1?
-        // Wait, LastHeard is Newest (0) to Oldest (N).
-        // If I play (Index 0), the "next" logical track is Index 1 (older).
-        // Let's assume standard behavior: Play through the list.
-        if (currentTrack.value && playlist.value.length > 0) {
-            playNext()
-        } else {
-            isPlaying.value = false
-        }
+        // Play Next (Newer)
+        playNext()
     }
 
     const playNext = () => {
-        // Next: Newer (up list, towards index 0)
-        // User wants "Time Forward" (Historic -> Live)
-        if (!currentTrack.value || playlist.value.length === 0) return
+        // "Next" means "Newer" (Time Forward)
+        // Playlist is: [Newest (0), ..., Oldest (N)]
+        // Current is at Index K.
+        // Next track is Index K-1.
+
+        if (!currentTrack.value || playlist.value.length === 0) {
+            isPlaying.value = false
+            return
+        }
 
         const idx = playlist.value.findIndex(t => t.id === currentTrack.value?.id)
+        if (idx === -1) return // Current track not in list?
+
         if (idx > 0) {
             const nextTrack = playlist.value[idx - 1]
-            if (nextTrack) play(nextTrack, playlist.value)
-        } else if (idx === 0) {
-            // We are at the newest track, and user wants "Next" (or auto-advance)
-            // Go to "Live / Waiting" state
-            currentTrack.value = null
+            if (nextTrack) play(nextTrack, playlist.value) // Keep existing playlist
+        } else {
+            // We are at Index 0 (Newest).
+            // Nothing newer.
+            // Go to idle / Live waiting state.
+            // Don't clear current track immediately so UI shows what just finished?
+            // Or usually players stop.
             isPlaying.value = false
-            isLiveMode.value = true
+            // isLiveMode.value = true? // Maybe auto-re-enable live mode?
         }
     }
 
     const playPrevious = () => {
-        // Previous: Older (down list, towards index N)
+        // "Previous" means "Older" (Time Backward) -> Index K+1
         if (!currentTrack.value || playlist.value.length === 0) return
 
         const idx = playlist.value.findIndex(t => t.id === currentTrack.value?.id)
         if (idx !== -1 && idx < playlist.value.length - 1) {
             const prevTrack = playlist.value[idx + 1]
-            if (prevTrack) play(prevTrack, playlist.value)
+            if (prevTrack) play(prevTrack, [])
         }
     }
 
@@ -113,13 +142,16 @@ export const usePlayerStore = defineStore('player', () => {
         currentTrack,
         isPlaying,
         isLiveMode,
+        isUIOpen,
         queue,
+        playlist,
         volume,
         currentTime,
         duration,
         isAgcEnabled,
         isRecording,
         play,
+        toggleUI,
         togglePlay,
         toggleLiveMode,
         toggleAgc,

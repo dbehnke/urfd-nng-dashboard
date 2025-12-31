@@ -2,7 +2,11 @@
 import { useThemeStore } from '../stores/theme'
 import { computed, ref, onMounted } from 'vue'
 
+import DesktopPlayer from '../components/AudioPlayer/DesktopPlayer.vue'
+import { usePlayerStore } from '../stores/player'
+
 const theme = useThemeStore()
+const player = usePlayerStore()
 
 const isMobile = ref(false)
 
@@ -75,8 +79,22 @@ const sidebarClasses = computed(() => {
 
       <!-- Right Side (Slots/Theme Toggle) -->
       <div class="flex items-center gap-3">
+         <!-- Desktop Player Toggle -->
+         <button v-if="!isMobile" 
+                 @click="player.toggleUI()"
+                 class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors"
+                 :class="player.isUIOpen ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'">
+             <span>PLAYER</span>
+             <svg class="w-4 h-4 transition-transform" :class="{'rotate-180': player.isUIOpen}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+             </svg>
+         </button>
+
          <slot name="header-actions"></slot>
       </div>
+      
+      <!-- Desktop Player Dropdown -->
+      <DesktopPlayer />
     </header>
 
     <div class="flex flex-1 relative">
