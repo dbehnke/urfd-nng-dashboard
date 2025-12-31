@@ -82,12 +82,28 @@ const sidebarClasses = computed(() => {
          <!-- Desktop Player Toggle -->
          <button v-if="!isMobile" 
                  @click="player.toggleUI()"
-                 class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors"
-                 :class="player.isUIOpen ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'">
-             <span>PLAYER</span>
-             <svg class="w-4 h-4 transition-transform" :class="{'rotate-180': player.isUIOpen}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-             </svg>
+                 class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold transition-all border"
+                 :class="player.isUIOpen ? 'bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800'">
+             
+             <!-- Icon State -->
+             <div class="flex items-center gap-2">
+                 <span v-if="player.isRecording && !player.isPlaying" class="relative flex h-3 w-3">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                 </span>
+                 <svg v-else-if="player.isPlaying" class="w-4 h-4 fill-current animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                 </svg>
+                 <svg v-else class="w-4 h-4" :class="{'rotate-180': player.isUIOpen}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                 </svg>
+             </div>
+
+             <!-- Text State -->
+             <span v-if="!player.isUIOpen && (player.isPlaying || player.isRecording)" class="max-w-[100px] truncate">
+                {{ player.currentTrack?.callsign || 'Recording...' }}
+             </span>
+             <span v-else>PLAYER</span>
          </button>
 
          <slot name="header-actions"></slot>

@@ -15,16 +15,47 @@ import Timeline from './Timeline.vue'
 
 const player = usePlayerStore()
 
+// Module Filtering
+const selectedModule = ref<string>('All')
+const availableModules = computed(() => {
+    const modules = new Set(player.playlist.map(t => t.module))
+    return ['All', ...Array.from(modules).sort()]
+})
+
 const currentIndex = computed(() => {
     if (!player.currentTrack) return -1
     return player.playlist.findIndex(t => t.id === player.currentTrack?.id)
 })
 
 const visiblePlaylist = computed(() => {
-    if (currentIndex.value === -1) return [...player.playlist].reverse()
-    // Show all newer tracks (0 to current) + 10 older tracks
-    // Playlist is [Newest ... Oldest]
-    // Slice (0, current + 11) gets Newest -> Current+10
+    let list = [...player.playlist]
+    
+    // Filter by Module
+    if (selectedModule.value !== 'All') {
+        list = list.filter(t => t.module === selectedModule.value)
+    }
+
+    if (currentIndex.value === -1) return list.reverse()
+    
+    // If filtering, index logic gets tricky. 
+    // Simplified: If filtering, just show the filtered list reverse?
+    // Or try to maintain the "10 items behind" logic?
+    // The "10 items behind" logic depends on the *global* current index to calculate time.
+    // Let's just reverse the filtered list for simplicity when filtering, 
+    // OR apply filter *after* the slice?
+    // User wants: "if nobody has talked on C don't show C".
+    // "only show up to 10 entries behind our current position".
+    
+    // Let's apply filter FIRST, then slice? No, slice depends on current track position.
+    // If I filter first, I might hide the current track if it doesn't match filter?
+    // Let's assume filter includes current track usually, or user wants to see specific module history.
+    
+    if (selectedModule.value !== 'All') {
+        // Just return reversed filtered list, maybe limit to 50?
+        return list.reverse().slice(0, 50)
+    }
+
+    // Default Behavior (All Modules)
     const end = Math.min(player.playlist.length, currentIndex.value + 11)
     return player.playlist.slice(0, end).reverse()
 })
@@ -146,12 +177,13 @@ watch(() => player.currentTrack, async (newTrack) => {
 
 <template>
   <div v-if="player.isUIOpen" 
-       class="absolute top-16 right-0 w-full sm:w-[500px] bg-slate-900/95 backdrop-blur-xl border-l border-b border-l-slate-800 border-b-slate-800 shadow-2xl z-50 transition-all duration-300">
+       class="absolute top-16 right-0 w-full sm:w-[500px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-l border-b border-l-slate-200 border-b-slate-200 dark:border-l-slate-800 dark:border-b-slate-800 shadow-2xl z-50 transition-all duration-300 flex flex-col max-h-[calc(100vh-4rem)]">
+
        
        <!-- Header / Close -->
-       <div class="flex items-center justify-between px-4 py-2 border-b border-slate-800">
-           <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Player</span>
-           <button @click="player.toggleUI()" class="text-slate-400 hover:text-white transition-colors">
+       <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800 shrink-0">
+           <span class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Player</span>
+           <button @click="player.toggleUI()" class="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
                <X :size="16" />
            </button>
        </div>
@@ -160,26 +192,26 @@ watch(() => player.currentTrack, async (newTrack) => {
        <!-- Main Player Info -->
        <div class="p-6">
            <div class="flex items-start justify-between gap-4">
-               <div>
-                   <h2 class="text-2xl font-bold text-white truncate max-w-[300px]">
+               <div class="min-w-0 flex-1">
+                   <h2 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white truncate">
                        {{ player.currentTrack?.callsign || 'Waiting...' }}
                    </h2>
                    <div class="flex items-center gap-2 mt-1">
-                        <span class="text-blue-400 font-medium text-sm">
+                        <span class="text-blue-600 dark:text-blue-400 font-medium text-sm">
                             Module {{ player.currentTrack?.module || '-' }}
                         </span>
-                        <span v-if="player.isLiveMode" class="text-[10px] font-bold bg-red-500/20 text-red-500 px-1.5 py-0.5 rounded uppercase animate-pulse">
+                        <span v-if="player.isLiveMode" class="text-[10px] font-bold bg-red-500/10 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded uppercase animate-pulse">
                             LIVE
                         </span>
                    </div>
-                   <p class="text-slate-500 text-sm mt-2">
+                   <p class="text-slate-500 dark:text-slate-400 text-sm mt-1 truncate">
                        {{ player.currentTrack?.description || 'Reflector ready for digital voice.' }}
                    </p>
                </div>
                
                <!-- Visualizer -->
-               <div class="w-24 h-12 bg-slate-950 rounded border border-slate-800/50">
-                    <canvas ref="canvasEl" width="100" height="50" class="w-full h-full"></canvas>
+               <div class="w-24 h-12 bg-slate-100 dark:bg-slate-950 rounded border border-slate-200 dark:border-slate-800/50 shrink-0">
+                    <canvas ref="canvasEl" width="100" height="50" class="w-full h-full opacity-60 dark:opacity-100"></canvas>
                </div>
            </div>
 
@@ -236,15 +268,20 @@ watch(() => player.currentTrack, async (newTrack) => {
        <Timeline />
 
        <!-- Playlist (Simple List) -->
-       <div class="border-t border-slate-800 max-h-[300px] overflow-y-auto bg-slate-950/50" ref="playlistContainer">
-           <div class="px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider sticky top-0 bg-slate-900/90 backdrop-blur z-10">
-               Up Next
+       <div class="border-t border-slate-200 dark:border-slate-800 flex-1 overflow-y-auto bg-slate-50/50 dark:bg-slate-950/50" ref="playlistContainer">
+           <div class="px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider sticky top-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur z-10 flex items-center justify-between">
+               <span>Up Next</span>
+               <!-- Module Filter -->
+               <select v-model="selectedModule" 
+                       class="bg-transparent text-right focus:outline-none cursor-pointer hover:text-blue-500 transition-colors">
+                   <option v-for="m in availableModules" :key="m" :value="m">{{ m }}</option>
+               </select>
            </div>
            <div v-for="(track) in visiblePlaylist" :key="track.id" 
                  :ref="(el) => setTrackRef(el, track.id)"
                  @click="player.play(track, player.playlist)"
-                 class="px-4 py-3 flex items-center justify-between hover:bg-white/5 cursor-pointer transition-colors border-b border-white/5 last:border-0 relative"
-                 :class="{'bg-slate-900': player.currentTrack?.id === track.id}">
+                 class="px-4 py-3 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors border-b border-slate-200 dark:border-white/5 last:border-0 relative"
+                 :class="{'bg-slate-100 dark:bg-slate-900': player.currentTrack?.id === track.id}">
                  
                  <!-- Active Indicator Line -->
                  <div v-if="player.currentTrack?.id === track.id" 
@@ -252,12 +289,12 @@ watch(() => player.currentTrack, async (newTrack) => {
 
                  <div class="flex items-center gap-3 pl-2">
                      <div>
-                         <div class="text-sm font-medium text-slate-200" :class="{'text-red-400': player.currentTrack?.id === track.id}">
+                         <div class="text-sm font-medium text-slate-700 dark:text-slate-200" :class="{'text-red-600 dark:text-red-400': player.currentTrack?.id === track.id}">
                              {{ track.callsign }}
                          </div>
                          <div class="text-xs text-slate-500 flex items-center gap-2">
                              <span>Module {{ track.module }} &middot; {{ formatTime(track.duration) }}</span>
-                             <span v-if="track.timestamp" class="text-slate-600">&middot; {{ formatPlaylistTime(track.timestamp) }}</span>
+                             <span v-if="track.timestamp" class="text-slate-400 dark:text-slate-600">&middot; {{ formatPlaylistTime(track.timestamp) }}</span>
                          </div>
                      </div>
                  </div>

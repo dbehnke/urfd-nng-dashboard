@@ -36,8 +36,8 @@ export const usePlayerStore = defineStore('player', () => {
             // Sort by time DESC just in case? LastHeard is usually sorted.
             // Let's assume input is sorted Newest -> Oldest.
         }
-        // If playing, ensure UI is open? Or maybe just for explicit user actions?
-        // Let's leave UI control manual for now, or auto-open on manual play.
+        // Auto-open UI on manual play
+        isUIOpen.value = true
     }
 
     const toggleUI = () => {
