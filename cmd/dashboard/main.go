@@ -338,12 +338,7 @@ func main() {
 	http.HandleFunc("/api/history", func(w http.ResponseWriter, r *http.Request) {
 		// Parse query params
 		query := r.URL.Query()
-		limit := 50
-		if l := query.Get("limit"); l != "" {
-			if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
-				limit = parsed
-			}
-		}
+		// limit is ignored in favor of "25 per module" rule
 
 		cursor := 0
 		if c := query.Get("cursor"); c != "" {
@@ -362,14 +357,33 @@ func main() {
 			}
 		}
 
+		// Use Window Function to get last 25 from EACH module to ensure diversity
+		// This prevents one busy module from pushing out all history of quiet modules.
 		var hearings []store.Hearing
-		dbQuery := s.DB.Order("id desc").Where("created_at > ?", since).Limit(limit)
+
+		// Note: glebarez/sqlite supports window functions.
+		// We use a raw query because GORM doesn't support recursive limits easily.
+		// We still respect 'since' (48h) and 'cursor'.
+
+		queryStr := `
+			SELECT * FROM (
+				SELECT *, ROW_NUMBER() OVER (PARTITION BY module ORDER BY id DESC) as rn 
+				FROM hearings 
+				WHERE created_at > ?
+		`
+		args := []interface{}{since}
 
 		if cursor > 0 {
-			dbQuery = dbQuery.Where("id < ?", cursor)
+			queryStr += ` AND id < ? `
+			args = append(args, cursor)
 		}
 
-		if err := dbQuery.Find(&hearings).Error; err != nil {
+		queryStr += `
+			) WHERE rn <= 25
+			ORDER BY id DESC
+		`
+
+		if err := s.DB.Raw(queryStr, args...).Scan(&hearings).Error; err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useLiveStore } from '../stores/live'
 import { useReflectorStore } from '../stores/reflector'
 
@@ -17,6 +17,8 @@ const reflector = useReflectorStore()
 // Helper to compute time ago string
 const timeAgo = (ts?: string) => {
   if (!ts) return ''
+  // dependency on now.value to trigger reactivity
+  const _ = now.value 
   const date = new Date(ts)
   const diff = Math.floor((Date.now() - date.getTime()) / 1000)
   
@@ -39,15 +41,36 @@ const moduleStats = computed(() => {
     
     // Get description from reflector store
     const desc = reflector.modules.find(m => m.Name === mod)?.Description || ''
+
+    let elapsed = ''
+    if (active && latest) {
+       const start = new Date(latest.created_at).getTime()
+       // Simple elapsed calc, relies on parent re-render or we need a local timer trigger
+       // useLiveStore doesn't expose 'now' but LastHeard updates 10x/sec? No 1x.
+       // We'll compute it relative to Date.now() which is reactive if we use a ref
+       elapsed = ((Date.now() - start) / 1000).toFixed(1) + 's'
+    }
     
     return {
       name: mod,
       description: desc,
       active,
       latest,
-      timeAgo: latest ? timeAgo(latest.created_at) : ''
+      timeAgo: latest ? timeAgo(latest.created_at) : '',
+      elapsed
     }
   })
+})
+
+const now = ref(Date.now())
+let timer: number
+onMounted(() => {
+  timer = window.setInterval(() => {
+    now.value = Date.now()
+  }, 100)
+})
+onUnmounted(() => {
+  clearInterval(timer)
 })
 </script>
 
@@ -81,8 +104,11 @@ const moduleStats = computed(() => {
           </div>
           
           <div class="text-xs font-mono font-medium" 
-               :class="stat.active ? 'text-red-500 animate-pulse' : 'text-slate-400'">
-            {{ stat.active ? 'LIVE' : stat.timeAgo }}
+               :class="stat.active ? 'text-red-500 font-bold' : 'text-slate-400'">
+            <span v-if="stat.active" class="flex items-center gap-1">
+               <span class="animate-pulse">●</span> {{ stat.elapsed }}
+            </span>
+            <span v-else>{{ stat.timeAgo }}</span>
           </div>
         </div>
         
