@@ -138,8 +138,20 @@ const playAudio = (file: string) => {
   // Find the entry that matches this file to get details
   const entry = live.lastHeard.find((h: any) => h.audio_file === file)
   if (entry) {
-      // Map all current visible entries to tracks to provide context
-      const playlist = live.lastHeard
+      player.play({
+          id: entry.id,
+          url: `/audio/${file}`,
+          callsign: entry.my,
+          module: entry.module,
+          duration: entry.duration || 0,
+          description: `${entry.ur} via ${entry.rpt1}`,
+          timestamp: parseDate(entry.created_at)
+      }, getPlaylistFromHistory(), true)
+  }
+}
+
+const getPlaylistFromHistory = () => {
+    return live.lastHeard
           .filter(h => h.audio_file) // Only those with audio
           .map(h => ({
               id: h.id,
@@ -150,18 +162,15 @@ const playAudio = (file: string) => {
               description: `${h.ur} via ${h.rpt1}`,
               timestamp: parseDate(h.created_at)
           }))
-
-      player.play({
-          id: entry.id,
-          url: `/audio/${file}`,
-          callsign: entry.my,
-          module: entry.module,
-          duration: entry.duration || 0,
-          description: `${entry.ur} via ${entry.rpt1}`,
-          timestamp: parseDate(entry.created_at)
-      }, playlist, true)
-  }
 }
+
+// Auto-populate player context if empty (so "Up Next" is ready)
+import { watch } from 'vue'
+watch(() => live.lastHeard, (newVal) => {
+    if (newVal.length > 0 && player.playlist.length === 0) {
+        player.setContext(getPlaylistFromHistory())
+    }
+}, { immediate: true })
 
 import MobilePlayer from '../components/AudioPlayer/MobilePlayer.vue'
 import ModuleGrid from '../components/ModuleGrid.vue'

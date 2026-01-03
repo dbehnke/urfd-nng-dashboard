@@ -18,7 +18,7 @@ const reflector = useReflectorStore()
 const timeAgo = (ts?: string) => {
   if (!ts) return ''
   // dependency on now.value to trigger reactivity
-  const _ = now.value 
+  now.value // Access property to track dependency 
   const date = new Date(ts)
   const diff = Math.floor((Date.now() - date.getTime()) / 1000)
   
@@ -45,10 +45,10 @@ const moduleStats = computed(() => {
     let elapsed = ''
     if (active && latest) {
        const start = new Date(latest.created_at).getTime()
-       // Simple elapsed calc, relies on parent re-render or we need a local timer trigger
-       // useLiveStore doesn't expose 'now' but LastHeard updates 10x/sec? No 1x.
-       // We'll compute it relative to Date.now() which is reactive if we use a ref
        elapsed = ((Date.now() - start) / 1000).toFixed(1) + 's'
+    } else if (latest && latest.duration && latest.duration > 0) {
+       // Show duration of last transmission if idle
+       elapsed = latest.duration.toFixed(1) + 's'
     }
     
     return {
@@ -108,7 +108,10 @@ onUnmounted(() => {
             <span v-if="stat.active" class="flex items-center gap-1">
                <span class="animate-pulse">●</span> {{ stat.elapsed }}
             </span>
-            <span v-else>{{ stat.timeAgo }}</span>
+            <span v-else class="flex items-center gap-1">
+               {{ stat.timeAgo }}
+               <span v-if="stat.elapsed" class="opacity-50">• {{ stat.elapsed }}</span>
+            </span>
           </div>
         </div>
         

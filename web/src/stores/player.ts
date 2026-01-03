@@ -40,6 +40,12 @@ export const usePlayerStore = defineStore('player', () => {
         }
     }
 
+    const setContext = (tracks: Track[]) => {
+        // Just populate the playlist, don't start playing
+        // Used for auto-fill on empty state
+        playlist.value = [...tracks]
+    }
+
     const toggleUI = () => {
         isUIOpen.value = !isUIOpen.value
     }
@@ -162,6 +168,7 @@ export const usePlayerStore = defineStore('player', () => {
         handleNewRecording,
         onTrackEnd,
         playNext,
-        playPrevious
+        playPrevious,
+        setContext
     }
 })
