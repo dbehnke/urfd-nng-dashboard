@@ -138,6 +138,7 @@ const playAudio = (file: string) => {
   // Find the entry that matches this file to get details
   const entry = live.lastHeard.find((h: any) => h.audio_file === file)
   if (entry) {
+      // Allow playing this track with the context of CURRENTLY filtered view
       player.play({
           id: entry.id,
           url: `/audio/${file}`,
@@ -146,31 +147,34 @@ const playAudio = (file: string) => {
           duration: entry.duration || 0,
           description: `${entry.ur} via ${entry.rpt1}`,
           timestamp: parseDate(entry.created_at)
-      }, getPlaylistFromHistory(), true)
+      }, mapToTracks(filteredEntries.value), true)
   }
 }
 
-const getPlaylistFromHistory = () => {
-    return live.lastHeard
-          .filter(h => h.audio_file) // Only those with audio
-          .map(h => ({
-              id: h.id,
-              url: `/audio/${h.audio_file}`,
-              callsign: h.my,
-              module: h.module,
-              duration: h.duration || 0,
-              description: `${h.ur} via ${h.rpt1}`,
-              timestamp: parseDate(h.created_at)
-          }))
+// Auto-populate & Sync player context with currently visible entries
+import { watch } from 'vue'
+
+// Helper to map entries to tracks
+const mapToTracks = (entries: any[]) => {
+  return entries
+      .filter(h => h.audio_file)
+      .map(h => ({
+          id: h.id,
+          url: `/audio/${h.audio_file}`,
+          callsign: h.my,
+          module: h.module,
+          duration: h.duration || 0,
+          description: `${h.ur} via ${h.rpt1}`,
+          timestamp: parseDate(h.created_at)
+      }))
 }
 
-// Auto-populate player context if empty (so "Up Next" is ready)
-import { watch } from 'vue'
-watch(() => live.lastHeard, (newVal) => {
-    if (newVal.length > 0 && player.playlist.length === 0) {
-        player.setContext(getPlaylistFromHistory())
-    }
-}, { immediate: true })
+// Watch filteredEntries to keep the player playlist in sync with what user sees
+watch(filteredEntries, (newVal) => {
+    const tracks = mapToTracks(newVal)
+    player.setContext(tracks)
+}, { immediate: true, deep: true })
+
 
 import MobilePlayer from '../components/AudioPlayer/MobilePlayer.vue'
 import ModuleGrid from '../components/ModuleGrid.vue'
