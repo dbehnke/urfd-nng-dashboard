@@ -41,7 +41,10 @@ const getBadgeColor = (sub: any) => {
         <div v-for="client in dmrClients" :key="client.Callsign" class="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
             <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/30">
                 <div class="flex items-center gap-4">
-                    <div class="font-bold text-lg text-blue-600 dark:text-blue-400">{{ client.Callsign }}</div>
+                    <div class="font-bold text-lg text-blue-600 dark:text-blue-400">
+                        {{ client.Callsign }} 
+                        <span v-if="client.DMRID" class="text-sm text-slate-400 font-normal">({{ client.DMRID }})</span>
+                    </div>
                 </div>
                 <div class="text-xs text-slate-400 font-mono">{{ formatTimeSince(client.ConnectTime) }}</div>
             </div>
@@ -69,7 +72,7 @@ const getBadgeColor = (sub: any) => {
                                 {{ getTimeoutLabel(sub) }}
                             </td>
                         </tr>
-                        <tr v-if="client.Subscriptions.length === 0">
+                        <tr v-if="!client.Subscriptions || client.Subscriptions.length === 0">
                             <td colspan="4" class="px-6 py-4 text-center text-slate-400 italic">No Active Subscriptions</td>
                         </tr>
                     </tbody>

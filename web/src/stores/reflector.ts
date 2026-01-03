@@ -3,6 +3,7 @@ import { ref } from 'vue'
 
 export interface Client {
     Callsign: string
+    DMRID?: number
     Protocol: string
     OnModule: string
     ConnectTime: string

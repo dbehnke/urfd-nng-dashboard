@@ -58,6 +58,7 @@ type Subscription struct {
 
 type Client struct {
 	Callsign      string         `json:"Callsign"`
+	DMRID         uint32         `json:"DMRID,omitempty"`
 	Protocol      string         `json:"Protocol"`
 	OnModule      string         `json:"OnModule"`
 	ConnectTime   time.Time      `json:"ConnectTime"`
