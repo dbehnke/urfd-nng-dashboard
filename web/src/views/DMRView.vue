@@ -42,7 +42,6 @@ const getBadgeColor = (sub: any) => {
             <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/30">
                 <div class="flex items-center gap-4">
                     <div class="font-bold text-lg text-blue-600 dark:text-blue-400">{{ client.Callsign }}</div>
-                    <div class="text-xs text-slate-500 px-2 py-0.5 bg-slate-200 dark:bg-slate-700 rounded">{{ client.OnModule ? `Module ${client.OnModule}` : 'No Module' }}</div>
                 </div>
                 <div class="text-xs text-slate-400 font-mono">{{ formatTimeSince(client.ConnectTime) }}</div>
             </div>
