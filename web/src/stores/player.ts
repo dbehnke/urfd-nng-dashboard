@@ -28,22 +28,26 @@ export const usePlayerStore = defineStore('player', () => {
     const isUIOpen = ref(false)
 
     // Actions
-    const play = (track: Track, context: Track[] = [], autoOpen: boolean = false) => {
+    const contextName = ref('All')
+
+    const play = (track: Track, context: Track[] = [], autoOpen: boolean = false, contextLabel: string = 'All') => {
         currentTrack.value = track
         isPlaying.value = true
         currentTime.value = 0 // Reset time immediately to prevent UI flicker
         if (context.length > 0) {
             playlist.value = [...context]
+            contextName.value = contextLabel
         }
         if (autoOpen) {
             isUIOpen.value = true
         }
     }
 
-    const setContext = (tracks: Track[]) => {
+    const setContext = (tracks: Track[], label: string = 'All') => {
         // Just populate the playlist, don't start playing
         // Used for auto-fill on empty state
         playlist.value = [...tracks]
+        contextName.value = label
     }
 
     const toggleUI = () => {
@@ -169,6 +173,7 @@ export const usePlayerStore = defineStore('player', () => {
         onTrackEnd,
         playNext,
         playPrevious,
-        setContext
+        setContext,
+        contextName
     }
 })

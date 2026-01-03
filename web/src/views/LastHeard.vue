@@ -139,6 +139,13 @@ const playAudio = (file: string) => {
   const entry = live.lastHeard.find((h: any) => h.audio_file === file)
   if (entry) {
       // Allow playing this track with the context of CURRENTLY filtered view
+      let label = 'All'
+      if (moduleFilter.value) {
+          label = `Module ${moduleFilter.value}`
+      } else if (filterText.value) {
+          label = `Search: ${filterText.value}`
+      }
+
       player.play({
           id: entry.id,
           url: `/audio/${file}`,
@@ -147,7 +154,7 @@ const playAudio = (file: string) => {
           duration: entry.duration || 0,
           description: `${entry.ur} via ${entry.rpt1}`,
           timestamp: parseDate(entry.created_at)
-      }, mapToTracks(filteredEntries.value), true)
+      }, mapToTracks(filteredEntries.value), true, label)
   }
 }
 
@@ -173,7 +180,16 @@ const mapToTracks = (entries: any[]) => {
 watch(filteredEntries, (newVal, oldVal) => {
     // 1. Sync Context (Playlist)
     const tracks = mapToTracks(newVal)
-    player.setContext(tracks)
+    
+    // Determine context label
+    let label = 'All'
+    if (moduleFilter.value) {
+        label = `Module ${moduleFilter.value}`
+    } else if (filterText.value) {
+        label = `Search: ${filterText.value}`
+    }
+
+    player.setContext(tracks, label)
 
     // 2. Handle Live Mode Queueing (New Recording arrived)
     if (newVal.length > 0) {

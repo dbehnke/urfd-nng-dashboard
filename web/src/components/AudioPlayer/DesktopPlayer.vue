@@ -16,46 +16,13 @@ import Timeline from './Timeline.vue'
 const player = usePlayerStore()
 
 // Module Filtering
-const selectedModule = ref<string>('All')
-const availableModules = computed(() => {
-    const modules = new Set(player.playlist.map(t => t.module))
-    return ['All', ...Array.from(modules).sort()]
-})
-
 const currentIndex = computed(() => {
     if (!player.currentTrack) return -1
     return player.playlist.findIndex(t => t.id === player.currentTrack?.id)
 })
 
 const visiblePlaylist = computed(() => {
-    let list = [...player.playlist]
-    
-    // Filter by Module
-    if (selectedModule.value !== 'All') {
-        list = list.filter(t => t.module === selectedModule.value)
-    }
-
-    if (currentIndex.value === -1) return list.reverse()
-    
-    // If filtering, index logic gets tricky. 
-    // Simplified: If filtering, just show the filtered list reverse?
-    // Or try to maintain the "10 items behind" logic?
-    // The "10 items behind" logic depends on the *global* current index to calculate time.
-    // Let's just reverse the filtered list for simplicity when filtering, 
-    // OR apply filter *after* the slice?
-    // User wants: "if nobody has talked on C don't show C".
-    // "only show up to 10 entries behind our current position".
-    
-    // Let's apply filter FIRST, then slice? No, slice depends on current track position.
-    // If I filter first, I might hide the current track if it doesn't match filter?
-    // Let's assume filter includes current track usually, or user wants to see specific module history.
-    
-    if (selectedModule.value !== 'All') {
-        // Just return reversed filtered list, maybe limit to 50?
-        return list.reverse().slice(0, 50)
-    }
-
-    // Default Behavior (All Modules)
+    // Default Behavior (Show all context provided by parent)
     const end = Math.min(player.playlist.length, currentIndex.value + 11)
     return player.playlist.slice(0, end).reverse()
 })
@@ -261,17 +228,16 @@ watch(() => player.currentTrack, async (newTrack) => {
        </div>
 
        <!-- Timeline (Moved Here) -->
-       <Timeline :filter="selectedModule" />
+       <Timeline />
 
        <!-- Playlist (Simple List) -->
        <div class="border-t border-slate-200 dark:border-slate-800 flex-1 overflow-y-auto bg-slate-50/50 dark:bg-slate-950/50" ref="playlistContainer">
            <div class="px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider sticky top-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur z-10 flex items-center justify-between">
                <span>Up Next</span>
-               <!-- Module Filter -->
-               <select v-model="selectedModule" 
-                       class="bg-transparent text-right focus:outline-none cursor-pointer hover:text-blue-500 transition-colors">
-                   <option v-for="m in availableModules" :key="m" :value="m">{{ m }}</option>
-               </select>
+               <!-- Context Label -->
+               <span class="text-blue-600 dark:text-blue-400 cursor-default" title="Current Playlist Filter">
+                   {{ player.contextName }}
+               </span>
            </div>
            <div v-for="(track, index) in visiblePlaylist" :key="track.id" 
                  :ref="(el) => setTrackRef(el, track.id)"
