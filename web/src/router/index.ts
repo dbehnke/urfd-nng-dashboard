@@ -28,6 +28,11 @@ const router = createRouter({
             path: '/modules',
             name: 'modules',
             component: () => import('../views/Modules.vue')
+        },
+        {
+            path: '/dmr',
+            name: 'dmr',
+            component: () => import('../views/DMRView.vue')
         }
     ]
 })

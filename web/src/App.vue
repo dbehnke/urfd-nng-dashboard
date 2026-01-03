@@ -58,6 +58,10 @@ const handleNavClick = () => {
           <LayoutGrid :size="20" />
           <span>Modules</span>
         </RouterLink>
+        <RouterLink to="/dmr" @click="handleNavClick" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" active-class="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium">
+          <Monitor :size="20" />
+          <span>DMR</span>
+        </RouterLink>
       </nav>
     </template>
 

@@ -6,6 +6,12 @@ export interface Client {
     Protocol: string
     OnModule: string
     ConnectTime: string
+    Subscriptions?: {
+        TG: number
+        Slot: number
+        Type: string
+        TimeoutLeft: number
+    }[]
 }
 
 export interface User {
