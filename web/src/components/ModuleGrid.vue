@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { useLiveStore } from '../stores/live'
 import { useReflectorStore } from '../stores/reflector'
+import { useCallbookStore } from '../stores/callbook'
+import { useLiveStore } from '../stores/live'
 
 const props = defineProps<{
   selectedModule?: string
@@ -13,6 +14,7 @@ const emit = defineEmits<{
 
 const live = useLiveStore()
 const reflector = useReflectorStore()
+const callbook = useCallbookStore()
 
 // Helper to compute time ago string
 const timeAgo = (ts?: string) => {
@@ -117,11 +119,14 @@ onUnmounted(() => {
         
         <!-- Content -->
         <div v-if="stat.latest" class="space-y-1">
-          <div class="font-bold text-lg truncate"
+          <div class="font-bold text-lg truncate leading-tight"
                :class="stat.active ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'">
             {{ stat.latest.my }}
+            <div class="text-[10px] font-normal text-slate-500 dark:text-slate-400 truncate">
+               {{ [callbook.getName(stat.latest.my), callbook.getLocation(stat.latest.my)].filter(Boolean).join(' · ') || '&nbsp;' }}
+            </div>
           </div>
-          <div class="text-xs text-slate-500 dark:text-slate-400 flex justify-between">
+          <div class="text-xs text-slate-500 dark:text-slate-400 flex justify-between pt-1">
             <span class="truncate pr-2">{{ stat.latest.ur }}</span>
             <span class="font-mono opacity-70">{{ stat.latest.protocol }}</span>
           </div>

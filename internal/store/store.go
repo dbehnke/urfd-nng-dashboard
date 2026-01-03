@@ -37,7 +37,7 @@ func NewStore(dbPath string) (*Store, error) {
 	}
 
 	// Auto Migrate
-	if err := db.AutoMigrate(&Hearing{}); err != nil {
+	if err := db.AutoMigrate(&Hearing{}, &Callbook{}); err != nil {
 		return nil, err
 	}
 

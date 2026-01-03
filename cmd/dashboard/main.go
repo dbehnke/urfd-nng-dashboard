@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/dbehnke/urfd-nng-dashboard/internal/assets"
+	"github.com/dbehnke/urfd-nng-dashboard/internal/callbook"
 	"github.com/dbehnke/urfd-nng-dashboard/internal/config"
 	"github.com/dbehnke/urfd-nng-dashboard/internal/logger"
 	"github.com/dbehnke/urfd-nng-dashboard/internal/nng"
@@ -70,6 +71,10 @@ func main() {
 	// 4. Initialize Hub
 	hub := server.NewHub()
 	go hub.Run()
+
+	// 5. Initialize Callbook Manager
+	cbMgr := callbook.NewManager(s, cfg.Callbook.QRZUsername, cfg.Callbook.QRZPassword)
+	cbMgr.Start()
 
 	// State retention & Session management
 	var (
@@ -404,6 +409,27 @@ func main() {
 		}); err != nil {
 			logger.Log.Error("Failed to encode config response", zap.Error(err))
 		}
+	})
+
+	http.HandleFunc("/api/callbook/", func(w http.ResponseWriter, r *http.Request) {
+		callsign := strings.TrimPrefix(r.URL.Path, "/api/callbook/")
+		callsign = strings.TrimSpace(callsign)
+		callsign = strings.ToUpper(callsign)
+
+		if callsign == "" {
+			http.Error(w, "Missing callsign", 400)
+			return
+		}
+
+		book, err := cbMgr.Lookup(callsign)
+		if err != nil {
+			// Not found or error
+			http.Error(w, "Not found", 404)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(book)
 	})
 
 	srv.OnConnect = func(client *server.Client) {

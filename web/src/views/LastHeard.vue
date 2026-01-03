@@ -202,7 +202,9 @@ watch(filteredEntries, (newVal, oldVal) => {
              const newTracks = mapToTracks([latest])
              if (newTracks.length > 0) {
                  // "This is a new recording relevant to my current view"
-                 player.handleNewRecording(newTracks[0])
+                if (newTracks[0]) {
+                  player.handleNewRecording(newTracks[0])
+                }
              }
         }
     }

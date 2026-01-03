@@ -11,6 +11,12 @@ type Config struct {
 	Reflector ReflectorConfig `mapstructure:"reflector" json:"reflector"`
 	Logging   LoggingConfig   `mapstructure:"logging" json:"logging"`
 	Audio     AudioConfig     `mapstructure:"audio" json:"audio"`
+	Callbook  CallbookConfig  `mapstructure:"callbook" json:"callbook"`
+}
+
+type CallbookConfig struct {
+	QRZUsername string `mapstructure:"qrz_username" json:"qrz_username"`
+	QRZPassword string `mapstructure:"qrz_password" json:"qrz_password"`
 }
 
 type ServerConfig struct {

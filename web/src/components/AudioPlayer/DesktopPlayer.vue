@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue'
 import { usePlayerStore } from '../../stores/player'
+import { useCallbookStore } from '../../stores/callbook'
+
 import { 
   Play, 
   Pause, 
@@ -14,6 +16,7 @@ import {
 import Timeline from './Timeline.vue'
 
 const player = usePlayerStore()
+const callbook = useCallbookStore()
 
 // Module Filtering
 const currentIndex = computed(() => {
@@ -160,9 +163,16 @@ watch(() => player.currentTrack, async (newTrack) => {
        <div class="p-6">
            <div class="flex items-start justify-between gap-4">
                <div class="min-w-0 flex-1">
-                   <h2 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white truncate">
+                   <h2 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white truncate leading-none mb-1">
                        {{ player.currentTrack?.callsign || 'Waiting...' }}
                    </h2>
+                   <!-- Callbook Info -->
+                   <div v-if="player.currentTrack?.callsign" class="text-sm text-slate-600 dark:text-slate-300 font-medium leading-tight mb-1">
+                        {{ callbook.getName(player.currentTrack.callsign) }}
+                        <div class="text-[11px] text-slate-500 font-normal">
+                            {{ callbook.getLocation(player.currentTrack.callsign) }}
+                        </div>
+                   </div>
                    <div class="flex items-center gap-2 mt-1">
                         <span class="text-blue-600 dark:text-blue-400 font-medium text-sm">
                             Module {{ player.currentTrack?.module || '-' }}
