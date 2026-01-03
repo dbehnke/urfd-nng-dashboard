@@ -13,10 +13,11 @@ const moduleFilter = ref('')
 
 let timer: number
 
+// Update timer for reactive timestamps (every 1s is enough for UI)
 onMounted(() => {
   timer = window.setInterval(() => {
     now.value = Date.now()
-  }, 100)
+  }, 1000)
 })
 
 onUnmounted(() => {
@@ -163,10 +164,25 @@ const playAudio = (file: string) => {
 }
 
 import MobilePlayer from '../components/AudioPlayer/MobilePlayer.vue'
+import ModuleGrid from '../components/ModuleGrid.vue'
+
+const toggleModuleFilter = (mod: string) => {
+  if (moduleFilter.value === mod) {
+    moduleFilter.value = ''
+  } else {
+    moduleFilter.value = mod
+  }
+}
 </script>
 
 <template>
   <div class="space-y-6">
+    <!-- Module Grid Dashboard -->
+    <ModuleGrid 
+      :selected-module="moduleFilter"
+      @select="toggleModuleFilter"
+    />
+
     <!-- Filters Card -->
     <div class="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-4">
       <div class="relative flex-1 min-w-[200px]">
