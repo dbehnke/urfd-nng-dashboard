@@ -49,11 +49,19 @@ type ActiveTalker struct {
 	Protocol string `json:"Protocol"`
 }
 
+type Subscription struct {
+	TG          uint   `json:"TG"`
+	Slot        int    `json:"Slot"`
+	Type        string `json:"Type"`
+	TimeoutLeft int64  `json:"TimeoutLeft"`
+}
+
 type Client struct {
-	Callsign    string    `json:"Callsign"`
-	Protocol    string    `json:"Protocol"`
-	OnModule    string    `json:"OnModule"`
-	ConnectTime time.Time `json:"ConnectTime"`
+	Callsign      string         `json:"Callsign"`
+	Protocol      string         `json:"Protocol"`
+	OnModule      string         `json:"OnModule"`
+	ConnectTime   time.Time      `json:"ConnectTime"`
+	Subscriptions []Subscription `json:"Subscriptions,omitempty"`
 }
 
 type User struct {
