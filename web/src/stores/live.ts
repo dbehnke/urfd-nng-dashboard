@@ -107,19 +107,6 @@ export const useLiveStore = defineStore('live', () => {
                         // Capture audio file
                         if (ev.recording) h.audio_file = ev.recording
                         if (ev.audio_file) h.audio_file = ev.audio_file
-
-                        // Notify player store for Live Mode
-                        if (h.audio_file) {
-                            player.handleNewRecording({
-                                id: h.id,
-                                url: `/audio/${h.audio_file}`,
-                                callsign: h.my,
-                                module: h.module,
-                                duration: h.duration || 0,
-                                description: `${h.ur} via ${h.rpt1}`,
-                                timestamp: new Date(h.created_at || Date.now()).getTime()
-                            })
-                        }
                     }
                     return
                 }
@@ -127,7 +114,6 @@ export const useLiveStore = defineStore('live', () => {
                 // Update active heartbeat by ID
                 if (ev.id) {
                     // Safety: Before marking this ID as active, ensure no other session for the SAME callsign is active
-                    // This prevents "cloning" if heartbeats arrive delayed or simulator flips fast
                     for (const id in activeSessions) {
                         const existing = lastHeard.value.find(h => h.id === Number(id))
                         if (existing && existing.my === ev.my && existing.id !== ev.id) {
@@ -142,7 +128,7 @@ export const useLiveStore = defineStore('live', () => {
                 const existingIndex = ev.id ? lastHeard.value.findIndex(h => h.id === ev.id) : -1
 
                 if (existingIndex !== -1) {
-                    // Update existing entry with potentially newer info (e.g. Module correction)
+                    // Update existing entry
                     const existing = lastHeard.value[existingIndex]
                     if (existing) {
                         if (ev.module && existing.module !== ev.module) existing.module = ev.module
@@ -151,30 +137,14 @@ export const useLiveStore = defineStore('live', () => {
                         if (ev.rpt2 && !existing.rpt2) existing.rpt2 = ev.rpt2
                         if (ev.created_at && !existing.created_at) existing.created_at = ev.created_at
 
-                        // closing event updates
-                        if (ev.type === 'closing') {
-                            existing.status = 'ended'
-                            if (ev.duration) existing.duration = ev.duration
-                            if (ev.recording) existing.audio_file = ev.recording
-                            if (ev.audio_file) existing.audio_file = ev.audio_file
-
-                            // Notify player store for Live Mode
-                            if (existing.audio_file) {
-                                player.handleNewRecording({
-                                    id: existing.id,
-                                    url: `/audio/${existing.audio_file}`,
-                                    callsign: existing.my,
-                                    module: existing.module,
-                                    duration: existing.duration || 0,
-                                    description: `${existing.ur} via ${existing.rpt1}`,
-                                    timestamp: new Date(existing.created_at || Date.now()).getTime()
-                                })
-                            }
-                        }
+                        // closing event updates (duration/file handled above in closing block usually?)
+                        // Wait, 'closing' type is handled inside the first if block above.
+                        // But standard 'hearing' status=ended might slip through?
+                        // Actually, the top block catches type=closing OR status=ended.
+                        // So this block handles only updates to existing Active sessions.
                     }
                 } else if (ev.type === 'hearing' && ev.id && ev.my) {
-                    // Critical: Sanitize and construct a clean Hearing object
-                    // This prevents "ghost" entries or property pollution from raw events
+                    // New Entry
                     const newEntry: Hearing = {
                         id: ev.id,
                         my: ev.my,
@@ -186,7 +156,7 @@ export const useLiveStore = defineStore('live', () => {
                         created_at: ev.created_at || new Date().toISOString(),
                         duration: ev.duration || 0,
                         status: ev.status === 'active' ? 'active' : 'ended',
-                        audio_file: ev.recording || ev.audio_file // Accept both from event or history
+                        audio_file: ev.recording || ev.audio_file
                     }
 
                     lastHeard.value.unshift(newEntry)

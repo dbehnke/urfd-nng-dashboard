@@ -170,10 +170,27 @@ const mapToTracks = (entries: any[]) => {
 }
 
 // Watch filteredEntries to keep the player playlist in sync with what user sees
-watch(filteredEntries, (newVal) => {
+watch(filteredEntries, (newVal, oldVal) => {
+    // 1. Sync Context (Playlist)
     const tracks = mapToTracks(newVal)
     player.setContext(tracks)
-}, { immediate: true, deep: true })
+
+    // 2. Handle Live Mode Queueing (New Recording arrived)
+    if (newVal.length > 0) {
+        const latest = newVal[0]
+        const oldLatest = oldVal && oldVal.length > 0 ? oldVal[0] : null
+        
+        // If a new entry appeared at the top AND it has an audio file
+        // unique check: ID must be different than previous top
+        if (oldLatest && latest && latest.id !== oldLatest.id && latest.audio_file) {
+             const newTracks = mapToTracks([latest])
+             if (newTracks.length > 0) {
+                 // "This is a new recording relevant to my current view"
+                 player.handleNewRecording(newTracks[0])
+             }
+        }
+    }
+}, { deep: true })
 
 
 import MobilePlayer from '../components/AudioPlayer/MobilePlayer.vue'
