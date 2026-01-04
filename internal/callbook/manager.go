@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	RadioIDUrl = "https://database.radioid.net/database/dump/user.csv"
+	RadioIDUrl = "https://radioid.net/static/user.csv"
 )
 
 type Manager struct {
