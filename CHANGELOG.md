@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.6.0](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.5.0...v1.6.0) (2026-01-04)
+
+
+### Features
+
+* Add DMR Dashboard Page ([b56701b](https://github.com/dbehnke/urfd-nng-dashboard/commit/b56701bf06161dd341e680e32a7d335e6ce9c735))
+* Add Module Grid to Dashboard ([39cf172](https://github.com/dbehnke/urfd-nng-dashboard/commit/39cf172b7df423a0f3cbd95813ef54ac16a0ec26))
+* Add Transmission Timer and Per-Module History Fetch ([4fffc08](https://github.com/dbehnke/urfd-nng-dashboard/commit/4fffc08fbbb02cec97fb6b3a4237310b6a459ad7))
+* callbook integration and cache ([676b114](https://github.com/dbehnke/urfd-nng-dashboard/commit/676b114e99ca1b786b1968eaade85964dfa1a519))
+* Display DMRID in DMR View ([4074733](https://github.com/dbehnke/urfd-nng-dashboard/commit/4074733899b713d59c5a51edc6e3ca65329ba171))
+* Display Last Duration and Auto-Fill Player ([9f82d5f](https://github.com/dbehnke/urfd-nng-dashboard/commit/9f82d5f930eb87b3e0f595fa092344ea8b7b704c))
+* Sync Player Context with Filtered View ([38aea39](https://github.com/dbehnke/urfd-nng-dashboard/commit/38aea39f634e0579bd1d29f0d4bdfd11ace72092))
+
+
+### Bug Fixes
+
+* Add Subscriptions to Client struct to prevent data drop ([e286775](https://github.com/dbehnke/urfd-nng-dashboard/commit/e28677561392b69b68e9f697de975ac4cc08296c))
+* **callbook:** update RadioID user.csv URL ([f1e06fc](https://github.com/dbehnke/urfd-nng-dashboard/commit/f1e06fc2fef40dc66b04465a64eb9eafd0e07e85))
+* Ensure Player respects Module Filter (Decouple live store) ([27d34dc](https://github.com/dbehnke/urfd-nng-dashboard/commit/27d34dcbb0f06984d491cf952143af19ede6b12b))
+* Remove module badge from DMR View ([669e969](https://github.com/dbehnke/urfd-nng-dashboard/commit/669e9698df03b4a9aad3eba3fa5754b067747c56))
+* Update Up Next label to reflect current filter ([03abe10](https://github.com/dbehnke/urfd-nng-dashboard/commit/03abe10a36e68ad5bfb220ac97d747f9eeadd500))
+
 ## [1.5.0](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.4.0...v1.5.0) (2025-12-31)
 
 
