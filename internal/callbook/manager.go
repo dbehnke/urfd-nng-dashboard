@@ -72,7 +72,7 @@ func (m *Manager) SyncRadioID() error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("bad status: %s", resp.Status)
@@ -190,7 +190,7 @@ func (m *Manager) lookupQRZ(callsign string) (*store.Callbook, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var loginData QRZDatabase
 	if err := xml.NewDecoder(resp.Body).Decode(&loginData); err != nil {
@@ -212,7 +212,7 @@ func (m *Manager) lookupQRZ(callsign string) (*store.Callbook, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 
 	var data QRZDatabase
 	if err := xml.NewDecoder(resp2.Body).Decode(&data); err != nil {
@@ -229,11 +229,6 @@ func (m *Manager) lookupQRZ(callsign string) (*store.Callbook, error) {
 	sname := data.Callsign.Name
 
 	// Sometimes 'name' is full name if fname is empty
-	if fname == "" && sname != "" {
-		// heavy heuristic, leave as is or split?
-		// leave as surname or put in name?
-		// Let's assume sname is fine.
-	}
 
 	cb := store.Callbook{
 		Callsign:  strings.ToUpper(callsign),
@@ -269,10 +264,10 @@ func (m *Manager) lookupCallook(callsign string) (*store.Callbook, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("Callook status: %s", resp.Status)
+		return nil, fmt.Errorf("callook status: %s", resp.Status)
 	}
 
 	var data callookResponse
@@ -281,7 +276,7 @@ func (m *Manager) lookupCallook(callsign string) (*store.Callbook, error) {
 	}
 
 	if data.Status != "VALID" {
-		return nil, fmt.Errorf("Callook invalid or not found")
+		return nil, fmt.Errorf("callook invalid or not found")
 	}
 
 	// Parsing Name: "First Last" -> Split
@@ -372,7 +367,7 @@ func (m *Manager) lookupHamDB(callsign string) (*store.Callbook, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("HamDB status: %s", resp.Status)

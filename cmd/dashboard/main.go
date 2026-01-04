@@ -429,7 +429,9 @@ func main() {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(book)
+		if err := json.NewEncoder(w).Encode(book); err != nil {
+			logger.Log.Error("Failed to encode callbook response", zap.Error(err))
+		}
 	})
 
 	srv.OnConnect = func(client *server.Client) {
