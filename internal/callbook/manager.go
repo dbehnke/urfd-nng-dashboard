@@ -151,8 +151,27 @@ func (m *Manager) saveBatch(batch []store.Callbook) error {
 
 // SafeGet handled above
 
+func sanitizeCallsign(callsign string) string {
+	callsign = strings.TrimSpace(callsign)
+	var sb strings.Builder
+	for _, r := range callsign {
+		// Valid callsign chars are A-Z, 0-9
+		// We stop at first non-alphanumeric char
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			sb.WriteRune(r)
+		} else {
+			break
+		}
+	}
+	return strings.ToUpper(sb.String())
+}
+
 func (m *Manager) Lookup(callsign string) (*store.Callbook, error) {
+	// Sanitize callsign (strip suffixes like /P, -D, or spaces)
+	callsign = sanitizeCallsign(callsign)
+
 	// 1. Local Cache Lookup
+
 	var book store.Callbook
 	err := m.db.Where("callsign = ?", callsign).First(&book).Error
 	if err == nil {

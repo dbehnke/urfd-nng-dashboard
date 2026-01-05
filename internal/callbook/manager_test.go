@@ -9,6 +9,30 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestSanitizeCallsign(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"KF8S", "KF8S"},
+		{"KF8S D", "KF8S"},
+		{"KF8S/Y", "KF8S"},
+		{"KF8S-DAVE", "KF8S"},
+		{"M0FXB", "M0FXB"},
+		{"VK5MD/P", "VK5MD"},
+		{"  KF8S  ", "KF8S"}, // Trim spaces
+		{"KF8S\tD", "KF8S"},
+		{"KF8S 7001", "KF8S"},
+	}
+
+	for _, tc := range tests {
+		got := sanitizeCallsign(tc.input)
+		if got != tc.expected {
+			t.Errorf("sanitizeCallsign(%q) = %q; want %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
 func TestManager_Lookup_Integration(t *testing.T) {
 	// Skip if strictly unit testing without network
 	if os.Getenv("INTEGRATION_TEST") == "" {
@@ -25,12 +49,6 @@ func TestManager_Lookup_Integration(t *testing.T) {
 	}
 
 	// Create manager
-	// We need to mock the store or just pass the DB if we refactor Manager to take DB?
-	// The current Manager.NewManager takes *store.Store.
-	// Let's create a partial store struct if possible or just inject the DB.
-	// The Manager struct has `db *gorm.DB`. NewManager gets it from `s.DB`.
-	// We can manually construct Manager for testing.
-
 	mgr := &Manager{
 		db:      db,
 		qrzUser: os.Getenv("QRZ_USERNAME"),
@@ -47,7 +65,7 @@ func TestManager_Lookup_Integration(t *testing.T) {
 			t.Errorf("Expected W1AW, got %s", cb.Callsign)
 		}
 		if cb.Country != "United States" && cb.Country != "USA" {
-			t.Errorf("Expected United States/USA, got %s", cb.Country)
+			t.Errorf("Expected United States/USA, got %s (Note: this might fail if RadioID/HamDB source differs)", cb.Country)
 		}
 		t.Logf("Found: %+v", cb)
 	})
