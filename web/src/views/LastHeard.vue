@@ -419,7 +419,7 @@ const toggleModuleFilter = (mod: string) => {
       </div>
     </div>
     <!-- Load More Button -->
-    <div class="flex justify-center pb-8" v-if="!filterText && !moduleFilter">
+    <div class="flex justify-center pb-8" v-if="!filterText">
       <button 
         v-if="!live.endOfHistory"
         @click="live.loadMoreHistory()" 

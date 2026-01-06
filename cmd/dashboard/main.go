@@ -384,7 +384,7 @@ func main() {
 		}
 
 		queryStr += `
-			) WHERE rn <= 25
+			) WHERE rn <= 100
 			ORDER BY id DESC
 		`
 
