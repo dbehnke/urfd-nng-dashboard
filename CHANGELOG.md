@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.6.0...v1.6.1) (2026-01-06)
+
+
+### Bug Fixes
+
+* increase history limit to 100 and restore load more button ([#16](https://github.com/dbehnke/urfd-nng-dashboard/issues/16)) ([b6bd38f](https://github.com/dbehnke/urfd-nng-dashboard/commit/b6bd38f2ce321eb118d26ae9d7b43d175b34d6e8))
+
 ## [1.6.0](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.5.0...v1.6.0) (2026-01-04)
 
 
