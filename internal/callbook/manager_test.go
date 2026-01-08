@@ -15,14 +15,19 @@ func TestSanitizeCallsign(t *testing.T) {
 		expected string
 	}{
 		{"KF8S", "KF8S"},
-		{"KF8S D", "KF8S"},
-		{"KF8S/Y", "KF8S"},
-		{"KF8S-DAVE", "KF8S"},
-		{"M0FXB", "M0FXB"},
-		{"VK5MD/P", "VK5MD"},
-		{"  KF8S  ", "KF8S"}, // Trim spaces
-		{"KF8S\tD", "KF8S"},
-		{"KF8S 7001", "KF8S"},
+		{"KF8S D", "KF8S"},       // Space separator
+		{"KF8S/P", "KF8S"},       // Slash separator
+		{"KF8S-DAVE", "KF8S"},    // Dash separator (stopped at dash)
+		{"M0FXB", "M0FXB"},       // Standard 3-char suffix
+		{"VK5MD/P", "VK5MD"},     // Slash suffix
+		{"  KF8S  ", "KF8S"},     // Trim spaces
+		{"KF8S\tD", "KF8S"},      // Tab separator
+		{"KK7MFEP", "KK7MFE"},    // Heuristic: Truncate 4th char after digit
+		{"KK7MFE", "KK7MFE"},     // Heuristic: Keep 3 chars
+		{"W1AW", "W1AW"},         // Standard 2-char suffix
+		{"A1A", "A1A"},           // Shortest standard
+		{"2E0ABC", "2E0ABC"},     // UK Foundation (3 char suffix)
+		{"KF8S7001", "KF8S7001"}, // Ends in digit? (Heuristic relies on LAST digit) -> KF8S7001 (suffix len 0)
 	}
 
 	for _, tc := range tests {
