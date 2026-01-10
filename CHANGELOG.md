@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.7.0](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.6.1...v1.7.0) (2026-01-10)
+
+
+### Features
+
+* add nng control test tool ([7becd73](https://github.com/dbehnke/urfd-nng-dashboard/commit/7becd730d5bedc5ab0cd1c95cb31ba0f66514bf5))
+
+
+### Bug Fixes
+
+* **callbook:** sanitize callsigns to strip suffixes ([#18](https://github.com/dbehnke/urfd-nng-dashboard/issues/18)) ([210f3d0](https://github.com/dbehnke/urfd-nng-dashboard/commit/210f3d08ccefb7f4308f32a9e67be7e07d462c33))
+* **lint:** check close error in test-control ([0fb9feb](https://github.com/dbehnke/urfd-nng-dashboard/commit/0fb9feb6244c2312c93cc7a40ebff18891f70604))
+
 ## [1.6.1](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.6.0...v1.6.1) (2026-01-06)
 
 
