@@ -21,7 +21,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("can't get new req socket: %v", err)
 	}
-	defer sock.Close()
+	defer func() { _ = sock.Close() }()
 
 	if err = sock.Dial(*addr); err != nil {
 		log.Fatalf("can't dial on req socket: %v", err)
