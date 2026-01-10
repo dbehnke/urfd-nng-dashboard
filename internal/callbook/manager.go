@@ -151,8 +151,63 @@ func (m *Manager) saveBatch(batch []store.Callbook) error {
 
 // SafeGet handled above
 
+func sanitizeCallsign(callsign string) string {
+	callsign = strings.ToUpper(strings.TrimSpace(callsign))
+
+	// 1. Basic allowed character filtering (A-Z, 0-9, /)
+	// We want to keep separators like '/' for now to identify standard suffixes
+	var sb strings.Builder
+	for _, r := range callsign {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '/' {
+			sb.WriteRune(r)
+		} else {
+			// Stop at first invalid char (space, tab, dash if usage implies separator)
+			break
+		}
+	}
+	clean := sb.String()
+
+	// 2. Heuristic: Truncate suffix if merged (no separator) and too long
+	// Standard callsigns: [Prefix][Digit][Suffix]
+	// Suffix is max 3 letters.
+	// If we find >3 letters after the LAST digit, and no '/' is present, likely a consolidated suffix.
+
+	if strings.Contains(clean, "/") {
+		// If explicit separator exists (e.g. VK5MD/P), trust it (or just return the base?)
+		// The requirement is "strip suffixes".
+		// Simple strip: take everything before the slash
+		parts := strings.Split(clean, "/")
+		if len(parts) > 0 {
+			clean = parts[0]
+		}
+	}
+
+	// Now check for the "merged suffix" case (KK7MFEP)
+	lastDigitIdx := -1
+	for i := len(clean) - 1; i >= 0; i-- {
+		if clean[i] >= '0' && clean[i] <= '9' {
+			lastDigitIdx = i
+			break
+		}
+	}
+
+	if lastDigitIdx != -1 {
+		suffixLen := len(clean) - 1 - lastDigitIdx
+		if suffixLen > 3 {
+			// Truncate to 3 chars after the last digit
+			clean = clean[:lastDigitIdx+1+3]
+		}
+	}
+
+	return clean
+}
+
 func (m *Manager) Lookup(callsign string) (*store.Callbook, error) {
+	// Sanitize callsign (strip suffixes like /P, -D, or spaces)
+	callsign = sanitizeCallsign(callsign)
+
 	// 1. Local Cache Lookup
+
 	var book store.Callbook
 	err := m.db.Where("callsign = ?", callsign).First(&book).Error
 	if err == nil {
