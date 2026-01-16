@@ -120,221 +120,224 @@ func main() {
 	// 5. Initialize NNG Subscriber
 	sub, err := nng.NewSubscriber(cfg.Server.NNGURL)
 	if err != nil {
-		logger.Log.Fatal("Failed to connect to NNG", zap.Error(err))
+		logger.Log.Error("Failed to connect to NNG; dashboard will run without live NNG events", zap.Error(err))
+		sub = nil
 	}
 
-	// 6. Listen for events
-	go func() {
-		if err := sub.Listen(func(ev nng.Event) {
-			// Pre-process: Trim spaces
-			ev.My = strings.TrimSpace(ev.My)
-			ev.Module = strings.TrimSpace(ev.Module)
+	// 6. Listen for events (only if NNG subscriber was created)
+	if sub != nil {
+		go func() {
+			if err := sub.Listen(func(ev nng.Event) {
+				// Pre-process: Trim spaces
+				ev.My = strings.TrimSpace(ev.My)
+				ev.Module = strings.TrimSpace(ev.Module)
 
-			// Log hearing events to DB (Session-aware)
-			if ev.Type == "hearing" || ev.Type == "closing" {
-				if ev.My == "" {
-					return
-				}
-				sessKey := ev.My + ":" + ev.Module
-				sessMu.Lock()
-
-				// Better matching: Find session by callsign if exact key fails
-				sess, exists := sessions[sessKey]
-				if !exists && ev.Type == "closing" {
-					// Search by callsign
-					for _, s := range sessions {
-						if s.Callsign == ev.My {
-							sess = s
-							exists = true
-							break
-						}
+				// Log hearing events to DB (Session-aware)
+				if ev.Type == "hearing" || ev.Type == "closing" {
+					if ev.My == "" {
+						return
 					}
-				}
+					sessKey := ev.My + ":" + ev.Module
+					sessMu.Lock()
 
-				if ev.Type == "hearing" {
-					if !exists {
-						h := store.Hearing{
-							My:        ev.My,
-							Ur:        ev.Ur,
-							Rpt1:      ev.Rpt1,
-							Rpt2:      ev.Rpt2,
-							Module:    ev.Module,
-							Protocol:  ev.Protocol,
-							CreatedAt: time.Now().UTC(),
-						}
-						if err := s.DB.Create(&h).Error; err != nil {
-							logger.Log.Error("Failed to save hearing", zap.Error(err))
-						}
-						sess = &ActiveSession{
-							ID:        h.ID,
-							Callsign:  h.My,
-							Module:    h.Module,
-							Protocol:  h.Protocol,
-							Ur:        h.Ur,
-							Rpt2:      h.Rpt2,
-							StartTime: h.CreatedAt,
-							LastSeen:  time.Now().UTC(),
-						}
-						sessions[sessKey] = sess
-					} else {
-						sess.LastSeen = time.Now().UTC()
-					}
-					ev.ID = sess.ID
-					ev.Protocol = sess.Protocol
-					ev.CreatedAt = sess.StartTime.UTC()
-					ev.Status = "active"
-				} else if ev.Type == "closing" && exists {
-					duration := time.Since(sess.StartTime).Seconds()
-					updates := map[string]interface{}{"duration": duration}
-					if ev.Recording != "" {
-						updates["audio_file"] = ev.Recording
-					}
-
-					if err := s.DB.Model(&store.Hearing{}).Where("id = ?", sess.ID).Updates(updates).Error; err != nil {
-						logger.Log.Error("Failed to update session", zap.Error(err))
-					}
-					ev.ID = sess.ID
-					ev.Status = "ended"
-					ev.Duration = duration
-					ev.CreatedAt = sess.StartTime.UTC()
-					ev.My = sess.Callsign
-					ev.Module = sess.Module
-					ev.Protocol = sess.Protocol
-					ev.Ur = sess.Ur
-					ev.Rpt2 = sess.Rpt2
-					ev.Protocol = sess.Protocol
-					ev.Ur = sess.Ur
-					ev.Rpt2 = sess.Rpt2
-					// ev.Recording is already set from Unmarshal if present
-					// and persisted to DB above. It will be broadcasted below.
-
-					// Clean up all sessions for this callsign to be safe
-					for k, s := range sessions {
-						if s.Callsign == ev.My {
-							delete(sessions, k)
-						}
-					}
-					logger.Log.Info("Session closed via closing event", zap.Uint("id", sess.ID))
-				}
-				sessMu.Unlock()
-			}
-
-			if ev.Type == "state" {
-				stateMu.Lock()
-				lastState = ev
-				stateMu.Unlock()
-
-				sessMu.Lock()
-				activeTalkersByCall := make(map[string]nng.ActiveTalker)
-				for _, talker := range ev.ActiveTalkers {
-					call := strings.TrimSpace(talker.Callsign)
-					if call != "" {
-						talker.Module = strings.TrimSpace(talker.Module)
-						activeTalkersByCall[call] = talker
-					}
-				}
-
-				now := time.Now().UTC()
-
-				// A. Update/End existing sessions based on State
-				for key, sess := range sessions {
-					talker, ok := activeTalkersByCall[sess.Callsign]
-					if ok {
-						// User still talking. Correct module if needed.
-						if sess.Module != talker.Module {
-							logger.Log.Info("Correcting session module",
-								zap.String("callsign", sess.Callsign),
-								zap.String("old", sess.Module),
-								zap.String("new", talker.Module))
-							sess.Module = talker.Module
-							if err := s.DB.Model(&store.Hearing{}).Where("id = ?", sess.ID).Update("module", sess.Module).Error; err != nil {
-								logger.Log.Error("DB fix failed", zap.Error(err))
+					// Better matching: Find session by callsign if exact key fails
+					sess, exists := sessions[sessKey]
+					if !exists && ev.Type == "closing" {
+						// Search by callsign
+						for _, s := range sessions {
+							if s.Callsign == ev.My {
+								sess = s
+								exists = true
+								break
 							}
-							delete(sessions, key)
-							sessions[sess.Callsign+":"+sess.Module] = sess
 						}
-						sess.LastSeen = now
-						// Synthetic heartbeat
-						hub.BroadcastJSON(nng.Event{
-							Type:      "hearing",
-							Status:    "active",
-							ID:        sess.ID,
-							My:        sess.Callsign,
-							Ur:        sess.Ur,
-							Module:    sess.Module,
-							Rpt2:      sess.Rpt2,
-							Protocol:  sess.Protocol,
-							CreatedAt: sess.StartTime,
-						})
-					} else {
-						// User NOT in state.
-						// Give them a 3-second grace to allow 'closing' event to arrive or for state jitter
-						if now.Sub(sess.LastSeen) > 3*time.Second {
-							duration := now.Sub(sess.StartTime).Seconds()
-							if err := s.DB.Model(&store.Hearing{}).Where("id = ?", sess.ID).Update("duration", duration).Error; err != nil {
-								logger.Log.Error("Duration update failed", zap.Error(err))
+					}
+
+					if ev.Type == "hearing" {
+						if !exists {
+							h := store.Hearing{
+								My:        ev.My,
+								Ur:        ev.Ur,
+								Rpt1:      ev.Rpt1,
+								Rpt2:      ev.Rpt2,
+								Module:    ev.Module,
+								Protocol:  ev.Protocol,
+								CreatedAt: time.Now().UTC(),
 							}
+							if err := s.DB.Create(&h).Error; err != nil {
+								logger.Log.Error("Failed to save hearing", zap.Error(err))
+							}
+							sess = &ActiveSession{
+								ID:        h.ID,
+								Callsign:  h.My,
+								Module:    h.Module,
+								Protocol:  h.Protocol,
+								Ur:        h.Ur,
+								Rpt2:      h.Rpt2,
+								StartTime: h.CreatedAt,
+								LastSeen:  time.Now().UTC(),
+							}
+							sessions[sessKey] = sess
+						} else {
+							sess.LastSeen = time.Now().UTC()
+						}
+						ev.ID = sess.ID
+						ev.Protocol = sess.Protocol
+						ev.CreatedAt = sess.StartTime.UTC()
+						ev.Status = "active"
+					} else if ev.Type == "closing" && exists {
+						duration := time.Since(sess.StartTime).Seconds()
+						updates := map[string]interface{}{"duration": duration}
+						if ev.Recording != "" {
+							updates["audio_file"] = ev.Recording
+						}
+
+						if err := s.DB.Model(&store.Hearing{}).Where("id = ?", sess.ID).Updates(updates).Error; err != nil {
+							logger.Log.Error("Failed to update session", zap.Error(err))
+						}
+						ev.ID = sess.ID
+						ev.Status = "ended"
+						ev.Duration = duration
+						ev.CreatedAt = sess.StartTime.UTC()
+						ev.My = sess.Callsign
+						ev.Module = sess.Module
+						ev.Protocol = sess.Protocol
+						ev.Ur = sess.Ur
+						ev.Rpt2 = sess.Rpt2
+						ev.Protocol = sess.Protocol
+						ev.Ur = sess.Ur
+						ev.Rpt2 = sess.Rpt2
+						// ev.Recording is already set from Unmarshal if present
+						// and persisted to DB above. It will be broadcasted below.
+
+						// Clean up all sessions for this callsign to be safe
+						for k, s := range sessions {
+							if s.Callsign == ev.My {
+								delete(sessions, k)
+							}
+						}
+						logger.Log.Info("Session closed via closing event", zap.Uint("id", sess.ID))
+					}
+					sessMu.Unlock()
+				}
+
+				if ev.Type == "state" {
+					stateMu.Lock()
+					lastState = ev
+					stateMu.Unlock()
+
+					sessMu.Lock()
+					activeTalkersByCall := make(map[string]nng.ActiveTalker)
+					for _, talker := range ev.ActiveTalkers {
+						call := strings.TrimSpace(talker.Callsign)
+						if call != "" {
+							talker.Module = strings.TrimSpace(talker.Module)
+							activeTalkersByCall[call] = talker
+						}
+					}
+
+					now := time.Now().UTC()
+
+					// A. Update/End existing sessions based on State
+					for key, sess := range sessions {
+						talker, ok := activeTalkersByCall[sess.Callsign]
+						if ok {
+							// User still talking. Correct module if needed.
+							if sess.Module != talker.Module {
+								logger.Log.Info("Correcting session module",
+									zap.String("callsign", sess.Callsign),
+									zap.String("old", sess.Module),
+									zap.String("new", talker.Module))
+								sess.Module = talker.Module
+								if err := s.DB.Model(&store.Hearing{}).Where("id = ?", sess.ID).Update("module", sess.Module).Error; err != nil {
+									logger.Log.Error("DB fix failed", zap.Error(err))
+								}
+								delete(sessions, key)
+								sessions[sess.Callsign+":"+sess.Module] = sess
+							}
+							sess.LastSeen = now
+							// Synthetic heartbeat
 							hub.BroadcastJSON(nng.Event{
 								Type:      "hearing",
-								Status:    "ended",
+								Status:    "active",
 								ID:        sess.ID,
 								My:        sess.Callsign,
-								Module:    sess.Module,
-								Protocol:  sess.Protocol,
 								Ur:        sess.Ur,
+								Module:    sess.Module,
 								Rpt2:      sess.Rpt2,
-								Duration:  duration,
-								CreatedAt: sess.StartTime.UTC(),
+								Protocol:  sess.Protocol,
+								CreatedAt: sess.StartTime,
 							})
-							logger.Log.Info("Session ended via state sync", zap.Uint("id", sess.ID))
-							delete(sessions, key)
+						} else {
+							// User NOT in state.
+							// Give them a 3-second grace to allow 'closing' event to arrive or for state jitter
+							if now.Sub(sess.LastSeen) > 3*time.Second {
+								duration := now.Sub(sess.StartTime).Seconds()
+								if err := s.DB.Model(&store.Hearing{}).Where("id = ?", sess.ID).Update("duration", duration).Error; err != nil {
+									logger.Log.Error("Duration update failed", zap.Error(err))
+								}
+								hub.BroadcastJSON(nng.Event{
+									Type:      "hearing",
+									Status:    "ended",
+									ID:        sess.ID,
+									My:        sess.Callsign,
+									Module:    sess.Module,
+									Protocol:  sess.Protocol,
+									Ur:        sess.Ur,
+									Rpt2:      sess.Rpt2,
+									Duration:  duration,
+									CreatedAt: sess.StartTime.UTC(),
+								})
+								logger.Log.Info("Session ended via state sync", zap.Uint("id", sess.ID))
+								delete(sessions, key)
+							}
 						}
 					}
+
+					// B. Recovery: Start missing sessions from State
+					for call, talker := range activeTalkersByCall {
+						found := false
+						for _, sess := range sessions {
+							if sess.Callsign == call {
+								found = true
+								break
+							}
+						}
+						if !found {
+							h := store.Hearing{
+								My:        call,
+								Module:    talker.Module,
+								Protocol:  talker.Protocol,
+								Ur:        "CQCQCQ",
+								Rpt1:      "SIMULATOR",
+								Rpt2:      "URFD " + talker.Module,
+								CreatedAt: now,
+							}
+							if err := s.DB.Create(&h).Error; err != nil {
+								logger.Log.Error("Recovery failed", zap.Error(err))
+							}
+							sessions[call+":"+talker.Module] = &ActiveSession{
+								ID:        h.ID,
+								Callsign:  h.My,
+								Module:    h.Module,
+								Protocol:  h.Protocol,
+								Ur:        h.Ur,
+								Rpt2:      h.Rpt2,
+								StartTime: h.CreatedAt,
+								LastSeen:  now,
+							}
+							logger.Log.Info("Recovered session from State", zap.String("callsign", call))
+						}
+					}
+					sessMu.Unlock()
 				}
 
-				// B. Recovery: Start missing sessions from State
-				for call, talker := range activeTalkersByCall {
-					found := false
-					for _, sess := range sessions {
-						if sess.Callsign == call {
-							found = true
-							break
-						}
-					}
-					if !found {
-						h := store.Hearing{
-							My:        call,
-							Module:    talker.Module,
-							Protocol:  talker.Protocol,
-							Ur:        "CQCQCQ",
-							Rpt1:      "SIMULATOR",
-							Rpt2:      "URFD " + talker.Module,
-							CreatedAt: now,
-						}
-						if err := s.DB.Create(&h).Error; err != nil {
-							logger.Log.Error("Recovery failed", zap.Error(err))
-						}
-						sessions[call+":"+talker.Module] = &ActiveSession{
-							ID:        h.ID,
-							Callsign:  h.My,
-							Module:    h.Module,
-							Protocol:  h.Protocol,
-							Ur:        h.Ur,
-							Rpt2:      h.Rpt2,
-							StartTime: h.CreatedAt,
-							LastSeen:  now,
-						}
-						logger.Log.Info("Recovered session from State", zap.String("callsign", call))
-					}
-				}
-				sessMu.Unlock()
+				hub.BroadcastJSON(ev)
+			}); err != nil {
+				logger.Log.Fatal("NNG subscriber failed", zap.Error(err))
 			}
-
-			hub.BroadcastJSON(ev)
-		}); err != nil {
-			logger.Log.Fatal("NNG subscriber failed", zap.Error(err))
-		}
-	}()
+		}()
+	}
 
 	// 7. Start HTTP Server
 	srv := server.NewServer(hub, assets.GetAssets())
