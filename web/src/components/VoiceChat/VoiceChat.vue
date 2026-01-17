@@ -4,6 +4,7 @@ import { useVoiceStore } from '@/stores/voice'
 import { useReflectorStore } from '@/stores/reflector'
 import VoiceEngine from './VoiceEngine.vue'
 import PTTButton from './PTTButton.vue'
+import PasswordDialog from './PasswordDialog.vue'
 import { Radio, AlertCircle } from 'lucide-vue-next'
 
 // Stores
@@ -14,6 +15,8 @@ const reflectorStore = useReflectorStore()
 const voiceEngine = ref<InstanceType<typeof VoiceEngine> | null>(null)
 const callsignInput = ref('')
 const isTransmitting = ref(false)
+const showPasswordDialog = ref(false)
+const pendingPTT = ref(false)
 
 // Computed
 const websocketUrl = computed(() => {
@@ -75,21 +78,34 @@ const handleModuleChange = (event: Event) => {
   }
 }
 
-const handlePTTDown = () => {
+const handlePTTDown = async () => {
   if (!voiceStore.canTransmit) {
     console.warn('Cannot transmit:', voiceStore.state)
     return
   }
   
-  isTransmitting.value = true
-  // PTT down logic would go here (to be implemented in Phase 4)
-  console.log('PTT DOWN')
+  // Check if we have a password stored
+  if (!voiceStore.password) {
+    // Need to prompt for password
+    pendingPTT.value = true
+    showPasswordDialog.value = true
+    return
+  }
+  
+  // Start PTT with stored password
+  const success = await voiceEngine.value?.startPTT(voiceStore.password)
+  if (success) {
+    isTransmitting.value = true
+  }
 }
 
 const handlePTTUp = () => {
+  if (!isTransmitting.value) {
+    return
+  }
+  
   isTransmitting.value = false
-  // PTT up logic would go here (to be implemented in Phase 4)
-  console.log('PTT UP')
+  voiceEngine.value?.stopPTT()
 }
 
 const handleStateChange = (newState: 'listening' | 'transmitting' | 'rx_busy' | 'disconnected') => {
@@ -99,6 +115,26 @@ const handleStateChange = (newState: 'listening' | 'transmitting' | 'rx_busy' | 
 const handleError = (message: string) => {
   voiceStore.setError(message)
   console.error('Voice error:', message)
+}
+
+const handlePasswordSubmit = async (password: string) => {
+  // Save password to store
+  voiceStore.setPassword(password)
+  showPasswordDialog.value = false
+  
+  // If PTT was pending, start it now
+  if (pendingPTT.value && voiceEngine.value) {
+    pendingPTT.value = false
+    const success = await voiceEngine.value.startPTT(password)
+    if (success) {
+      isTransmitting.value = true
+    }
+  }
+}
+
+const handlePasswordCancel = () => {
+  showPasswordDialog.value = false
+  pendingPTT.value = false
 }
 
 // Lifecycle
@@ -213,6 +249,13 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
       :is-transmitting="isTransmitting"
       @state-change="handleStateChange"
       @error="handleError"
+    />
+
+    <!-- Password Dialog -->
+    <PasswordDialog
+      :show="showPasswordDialog"
+      @submit="handlePasswordSubmit"
+      @cancel="handlePasswordCancel"
     />
   </div>
 </template>

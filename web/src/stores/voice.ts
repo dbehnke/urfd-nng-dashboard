@@ -17,6 +17,8 @@ export const useVoiceStore = defineStore('voice', () => {
   const state = ref<VoiceState>('disconnected')
   const lastError = ref<string | null>(null)
   const isEnabled = ref(false)
+  const password = ref<string | null>(null)
+  const passwordRequired = ref(false)
 
   // Computed
   const canTransmit = computed(() => {
@@ -76,10 +78,26 @@ export const useVoiceStore = defineStore('voice', () => {
     isEnabled.value = enabled
   }
 
+  const setPassword = (pwd: string | null) => {
+    password.value = pwd
+    
+    // Persist to sessionStorage (not localStorage for security)
+    if (pwd) {
+      sessionStorage.setItem('voice_password', pwd)
+    } else {
+      sessionStorage.removeItem('voice_password')
+    }
+  }
+
+  const setPasswordRequired = (required: boolean) => {
+    passwordRequired.value = required
+  }
+
   const loadFromStorage = () => {
     // Load persisted callsign and module
     const savedCallsign = localStorage.getItem('voice_callsign')
     const savedModule = localStorage.getItem('voice_module')
+    const savedPassword = sessionStorage.getItem('voice_password')
     
     if (savedCallsign) {
       callsign.value = savedCallsign
@@ -88,6 +106,10 @@ export const useVoiceStore = defineStore('voice', () => {
     if (savedModule) {
       selectedModule.value = savedModule
     }
+    
+    if (savedPassword) {
+      password.value = savedPassword
+    }
   }
 
   const reset = () => {
@@ -95,6 +117,8 @@ export const useVoiceStore = defineStore('voice', () => {
     selectedModule.value = null
     state.value = 'disconnected'
     lastError.value = null
+    password.value = null
+    passwordRequired.value = false
   }
 
   return {
@@ -104,6 +128,8 @@ export const useVoiceStore = defineStore('voice', () => {
     state,
     lastError,
     isEnabled,
+    password,
+    passwordRequired,
     
     // Computed
     canTransmit,
@@ -115,6 +141,8 @@ export const useVoiceStore = defineStore('voice', () => {
     setState,
     setError,
     setEnabled,
+    setPassword,
+    setPasswordRequired,
     loadFromStorage,
     reset
   }
