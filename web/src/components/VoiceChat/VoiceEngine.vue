@@ -56,6 +56,10 @@ interface DiagnosticEvent {
 const diagnosticLog = ref<DiagnosticEvent[]>([])
 const maxLogEntries = 100
 
+// Media Session API for background audio and lock screen controls
+const activeTalker = ref<string | null>(null)
+const mediaSessionSupported = ref(false)
+
 const logDiagnostic = (type: string, details: any = {}) => {
   const event: DiagnosticEvent = {
     timestamp: Date.now(),
@@ -85,6 +89,76 @@ const getDiagnosticLog = () => {
   }))
 }
 
+// Initialize Media Session API for background audio support
+const initMediaSession = () => {
+  if (!('mediaSession' in navigator)) {
+    console.log('Media Session API not supported')
+    mediaSessionSupported.value = false
+    return
+  }
+  
+  mediaSessionSupported.value = true
+  
+  try {
+    // Set metadata for lock screen / notification
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: 'URFD Voice Chat',
+      artist: activeTalker.value ? `Listening to ${activeTalker.value}` : 'Ready to listen',
+      album: `Module ${props.module || 'None'}`,
+      artwork: [
+        // Use a radio icon or app logo if available
+        { src: '/favicon.ico', sizes: '96x96', type: 'image/png' }
+      ]
+    })
+    
+    // Set playback state
+    navigator.mediaSession.playbackState = 'playing'
+    
+    // Note: Action handlers would go here for play/pause/stop
+    // For now, we'll keep it simple as the audio is continuous
+    
+    logDiagnostic('media_session_initialized', {
+      supported: true,
+      module: props.module
+    })
+    
+    console.log('Media Session API initialized')
+  } catch (error) {
+    console.error('Failed to initialize Media Session:', error)
+    logDiagnostic('media_session_init_error', { error: String(error) })
+  }
+}
+
+// Update Media Session metadata when active talker changes
+const updateMediaSessionMetadata = (talker: string | null) => {
+  activeTalker.value = talker
+  
+  if (!mediaSessionSupported.value) return
+  
+  try {
+    if (navigator.mediaSession.metadata) {
+      navigator.mediaSession.metadata.artist = talker 
+        ? `Listening to ${talker}` 
+        : props.module 
+        ? `Monitoring Module ${props.module}` 
+        : 'Ready to listen'
+    }
+  } catch (error) {
+    console.error('Failed to update Media Session metadata:', error)
+  }
+}
+
+// Set Media Session playback state
+const setMediaSessionState = (state: 'playing' | 'paused' | 'none') => {
+  if (!mediaSessionSupported.value) return
+  
+  try {
+    navigator.mediaSession.playbackState = state
+  } catch (error) {
+    console.error('Failed to set Media Session state:', error)
+  }
+}
+
 // Initialize Web Audio API and Opus decoder
 const initAudio = async () => {
   try {
@@ -104,6 +178,9 @@ const initAudio = async () => {
     
     // Start audio level monitoring
     startLevelMonitoring()
+    
+    // Initialize Media Session API for background playback
+    initMediaSession()
     
     logDiagnostic('audio_init_success', {
       sampleRate: audioContext.value.sampleRate,
@@ -302,6 +379,9 @@ const connect = () => {
         callsign: props.callsign
       })
       
+      // Set Media Session to playing when connected
+      setMediaSessionState('playing')
+      
       // Send voice_start message
       const startMsg = {
         type: 'voice_start',
@@ -319,6 +399,12 @@ const connect = () => {
         switch (data.type) {
           case 'audio_data':
             isReceivingAudio.value = true
+            
+            // Update Media Session with active talker
+            if (data.from && data.from !== activeTalker.value) {
+              updateMediaSessionMetadata(data.from)
+            }
+            
             await handleAudioData(data)
             break
           case 'voice_state':
@@ -329,6 +415,8 @@ const connect = () => {
               isReceivingAudio.value = true
             } else if (data.state === 'listening') {
               isReceivingAudio.value = false
+              // Clear active talker when returning to listening
+              updateMediaSessionMetadata(null)
             }
             
             emit('stateChange', data.state)
@@ -356,6 +444,10 @@ const connect = () => {
       currentState.value = 'disconnected'
       isReceivingAudio.value = false
       emit('stateChange', 'disconnected')
+      
+      // Set Media Session to paused when disconnected
+      setMediaSessionState('paused')
+      updateMediaSessionMetadata(null)
       
       // Attempt reconnection if appropriate
       if (shouldReconnect.value && !event.wasClean && reconnectAttempts.value < maxReconnectAttempts) {
@@ -407,6 +499,10 @@ const disconnect = () => {
     ws.value = null
   }
   isConnected.value = false
+  
+  // Set Media Session to none when disconnecting
+  setMediaSessionState('none')
+  updateMediaSessionMetadata(null)
 }
 
 // Handle incoming audio data
@@ -653,6 +749,9 @@ onUnmounted(() => {
   if (audioContext.value) {
     audioContext.value.close()
   }
+  
+  // Clear Media Session
+  setMediaSessionState('none')
 })
 
 // Watch for module/callsign changes to reconnect
@@ -671,7 +770,9 @@ defineExpose({
   rxLevel,
   txLevel,
   getDiagnosticLog,
-  diagnosticLog
+  diagnosticLog,
+  activeTalker,
+  mediaSessionSupported
 })
 </script>
 
