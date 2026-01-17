@@ -24,6 +24,8 @@ const mediaStream = ref<MediaStream | null>(null)
 const micPermissionGranted = ref(false)
 const micPermissionDenied = ref(false)
 const isConnected = ref(false)
+const currentState = ref<'listening' | 'transmitting' | 'rx_busy' | 'disconnected'>('disconnected')
+const isReceivingAudio = ref(false)
 
 // Initialize Web Audio API and Opus decoder
 const initAudio = async () => {
@@ -158,10 +160,24 @@ const connect = () => {
         
         switch (data.type) {
           case 'audio_data':
+            isReceivingAudio.value = true
             await handleAudioData(data)
             break
           case 'voice_state':
+            currentState.value = data.state
+            
+            // Update receiving flag based on state
+            if (data.state === 'rx_busy') {
+              isReceivingAudio.value = true
+            } else if (data.state === 'listening') {
+              isReceivingAudio.value = false
+            }
+            
             emit('stateChange', data.state)
+            break
+          case 'ptt_denied':
+            console.warn('PTT denied:', data.reason)
+            emit('error', `PTT denied: ${data.reason}. Active talker: ${data.active_talker || 'unknown'}`)
             break
           default:
             console.log('Unknown message type:', data.type)
@@ -179,6 +195,8 @@ const connect = () => {
     ws.value.onclose = () => {
       console.log('WebSocket disconnected')
       isConnected.value = false
+      currentState.value = 'disconnected'
+      isReceivingAudio.value = false
       emit('stateChange', 'disconnected')
     }
   } catch (error) {
@@ -272,6 +290,12 @@ const startPTT = async (password?: string): Promise<boolean> => {
     return false
   }
 
+  // Half-duplex: Check if currently receiving audio
+  if (isReceivingAudio.value || currentState.value === 'rx_busy') {
+    emit('error', 'Cannot transmit while receiving audio (half-duplex mode)')
+    return false
+  }
+
   // Request microphone permission if not already granted
   const hasPermission = await requestMicPermission()
   if (!hasPermission) {
@@ -300,6 +324,7 @@ const startPTT = async (password?: string): Promise<boolean> => {
     // Start recording
     opusEncoder.value.start()
     
+    currentState.value = 'transmitting'
     console.log('PTT started')
     return true
   } catch (error) {
@@ -325,6 +350,7 @@ const stopPTT = () => {
     }
     ws.value?.send(JSON.stringify(pttMsg))
     
+    currentState.value = 'listening'
     console.log('PTT stopped')
   } catch (error) {
     console.error('Failed to stop PTT:', error)
@@ -393,7 +419,9 @@ defineExpose({
   startPTT,
   stopPTT,
   micPermissionGranted,
-  micPermissionDenied
+  micPermissionDenied,
+  currentState,
+  isReceivingAudio
 })
 </script>
 
