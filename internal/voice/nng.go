@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"go.nanomsg.org/mangos/v3"
 	"go.nanomsg.org/mangos/v3/protocol/pair"
@@ -37,8 +38,8 @@ func NewVoiceClient(url string) (*VoiceClient, error) {
 		return nil, fmt.Errorf("failed to create PAIR socket: %w", err)
 	}
 
-	// Set socket options
-	if err := sock.SetOption(mangos.OptionRecvDeadline, 0); err != nil {
+	// Set socket options - negative timeout means wait forever
+	if err := sock.SetOption(mangos.OptionRecvDeadline, time.Duration(-1)); err != nil {
 		sock.Close()
 		return nil, fmt.Errorf("failed to set recv deadline: %w", err)
 	}
