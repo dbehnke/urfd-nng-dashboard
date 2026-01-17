@@ -24,5 +24,7 @@ FROM alpine:latest
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=backend-builder /app/urfd-dashboard .
+# Include default config so container can run without external mount
+COPY config.yaml /app/config.yaml
 EXPOSE 8080
 ENTRYPOINT ["./urfd-dashboard"]
