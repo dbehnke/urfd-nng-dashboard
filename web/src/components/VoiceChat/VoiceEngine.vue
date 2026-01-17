@@ -60,6 +60,10 @@ const maxLogEntries = 100
 const activeTalker = ref<string | null>(null)
 const mediaSessionSupported = ref(false)
 
+// Wake Lock API to prevent screen sleep during sessions
+const wakeLock = ref<any>(null)
+const wakeLockSupported = ref(false)
+
 const logDiagnostic = (type: string, details: any = {}) => {
   const event: DiagnosticEvent = {
     timestamp: Date.now(),
@@ -156,6 +160,53 @@ const setMediaSessionState = (state: 'playing' | 'paused' | 'none') => {
     navigator.mediaSession.playbackState = state
   } catch (error) {
     console.error('Failed to set Media Session state:', error)
+  }
+}
+
+// Request Wake Lock to prevent screen sleep
+const requestWakeLock = async () => {
+  if (!('wakeLock' in navigator)) {
+    console.log('Wake Lock API not supported')
+    wakeLockSupported.value = false
+    return
+  }
+  
+  wakeLockSupported.value = true
+  
+  // Only request if we don't already have one
+  if (wakeLock.value !== null) {
+    return
+  }
+  
+  try {
+    wakeLock.value = await (navigator as any).wakeLock.request('screen')
+    
+    wakeLock.value.addEventListener('release', () => {
+      console.log('Wake Lock released')
+      logDiagnostic('wake_lock_released', {})
+    })
+    
+    logDiagnostic('wake_lock_acquired', {})
+    console.log('Wake Lock acquired')
+  } catch (error) {
+    console.error('Failed to acquire Wake Lock:', error)
+    logDiagnostic('wake_lock_error', { error: String(error) })
+    wakeLock.value = null
+  }
+}
+
+// Release Wake Lock
+const releaseWakeLock = async () => {
+  if (wakeLock.value === null) return
+  
+  try {
+    await wakeLock.value.release()
+    wakeLock.value = null
+    logDiagnostic('wake_lock_released_manual', {})
+    console.log('Wake Lock released manually')
+  } catch (error) {
+    console.error('Failed to release Wake Lock:', error)
+    wakeLock.value = null
   }
 }
 
@@ -382,6 +433,9 @@ const connect = () => {
       // Set Media Session to playing when connected
       setMediaSessionState('playing')
       
+      // Request Wake Lock to keep screen on
+      requestWakeLock()
+      
       // Send voice_start message
       const startMsg = {
         type: 'voice_start',
@@ -449,6 +503,9 @@ const connect = () => {
       setMediaSessionState('paused')
       updateMediaSessionMetadata(null)
       
+      // Release Wake Lock when disconnected
+      releaseWakeLock()
+      
       // Attempt reconnection if appropriate
       if (shouldReconnect.value && !event.wasClean && reconnectAttempts.value < maxReconnectAttempts) {
         attemptReconnect()
@@ -503,6 +560,9 @@ const disconnect = () => {
   // Set Media Session to none when disconnecting
   setMediaSessionState('none')
   updateMediaSessionMetadata(null)
+  
+  // Release Wake Lock
+  releaseWakeLock()
 }
 
 // Handle incoming audio data
@@ -717,6 +777,15 @@ const sendAudioData = (opusData: Uint8Array) => {
 // Lifecycle hooks
 onMounted(async () => {
   await initAudio()
+  
+  // Re-acquire Wake Lock when page becomes visible (important for mobile)
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && isConnected.value) {
+      // Wake Lock is automatically released when page becomes hidden
+      // Re-acquire it when page becomes visible again
+      await requestWakeLock()
+    }
+  })
 })
 
 onUnmounted(() => {
@@ -752,6 +821,9 @@ onUnmounted(() => {
   
   // Clear Media Session
   setMediaSessionState('none')
+  
+  // Release Wake Lock
+  releaseWakeLock()
 })
 
 // Watch for module/callsign changes to reconnect
@@ -772,7 +844,8 @@ defineExpose({
   getDiagnosticLog,
   diagnosticLog,
   activeTalker,
-  mediaSessionSupported
+  mediaSessionSupported,
+  wakeLockSupported
 })
 </script>
 
