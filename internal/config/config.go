@@ -12,6 +12,7 @@ type Config struct {
 	Logging   LoggingConfig   `mapstructure:"logging" json:"logging"`
 	Audio     AudioConfig     `mapstructure:"audio" json:"audio"`
 	Callbook  CallbookConfig  `mapstructure:"callbook" json:"callbook"`
+	Voice     VoiceConfig     `mapstructure:"voice" json:"voice"`
 }
 
 type CallbookConfig struct {
@@ -46,6 +47,15 @@ type AudioConfig struct {
 	Path   string `mapstructure:"path" json:"path"`
 }
 
+type VoiceConfig struct {
+	Enable           bool   `mapstructure:"enable" json:"enable"`
+	ReflectorAddr    string `mapstructure:"reflector_addr" json:"reflector_addr"`
+	TransmitPassword string `mapstructure:"transmit_password" json:"transmit_password"`
+	MaxClients       int    `mapstructure:"max_clients" json:"max_clients"`
+	OpusBitrate      int    `mapstructure:"opus_bitrate" json:"opus_bitrate"`
+	MaxTxDuration    int    `mapstructure:"max_tx_duration" json:"max_tx_duration"` // seconds
+}
+
 func LoadConfig(path string) (*Config, error) {
 	v := viper.New()
 
@@ -57,6 +67,12 @@ func LoadConfig(path string) (*Config, error) {
 	v.SetDefault("reflector.description", "Universal Reflector Dashboard")
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.console", true)
+	v.SetDefault("voice.enable", false)
+	v.SetDefault("voice.reflector_addr", "tcp://127.0.0.1:5556")
+	v.SetDefault("voice.transmit_password", "")
+	v.SetDefault("voice.max_clients", 100)
+	v.SetDefault("voice.opus_bitrate", 12000)
+	v.SetDefault("voice.max_tx_duration", 120)
 
 	// Env vars
 	v.SetEnvPrefix("URFD")

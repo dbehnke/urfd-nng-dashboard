@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
@@ -20,14 +21,19 @@ type Hub struct {
 	Broadcast  chan []byte
 	Register   chan *Client
 	Unregister chan *Client
+
+	// Voice session management
+	activeTransmitters map[string]string // module -> callsign
+	mu                 sync.RWMutex
 }
 
 func NewHub() *Hub {
 	return &Hub{
-		Broadcast:  make(chan []byte),
-		Register:   make(chan *Client),
-		Unregister: make(chan *Client),
-		Clients:    make(map[*Client]bool),
+		Broadcast:          make(chan []byte),
+		Register:           make(chan *Client),
+		Unregister:         make(chan *Client),
+		Clients:            make(map[*Client]bool),
+		activeTransmitters: make(map[string]string),
 	}
 }
 
@@ -92,4 +98,38 @@ func (c *Client) WritePump() {
 		}
 	}
 	_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+}
+
+// Voice session management methods
+
+// HasActiveTransmitter checks if a module has an active transmitter
+func (h *Hub) HasActiveTransmitter(module string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	_, exists := h.activeTransmitters[module]
+	return exists
+}
+
+// GetActiveTransmitter returns the callsign of the active transmitter for a module
+func (h *Hub) GetActiveTransmitter(module string) (string, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	callsign, exists := h.activeTransmitters[module]
+	return callsign, exists
+}
+
+// SetActiveTransmitter sets the active transmitter for a module
+func (h *Hub) SetActiveTransmitter(module, callsign string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.activeTransmitters[module] = callsign
+	log.Printf("Active transmitter on module %s: %s", module, callsign)
+}
+
+// ClearActiveTransmitter removes the active transmitter for a module
+func (h *Hub) ClearActiveTransmitter(module string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.activeTransmitters, module)
+	log.Printf("Cleared active transmitter on module %s", module)
 }
