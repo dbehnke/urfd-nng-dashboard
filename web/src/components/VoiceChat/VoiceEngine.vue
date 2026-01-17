@@ -19,6 +19,10 @@ const emit = defineEmits<{
 const ws = ref<WebSocket | null>(null)
 const audioContext = ref<AudioContext | null>(null)
 const opusDecoder = ref<any>(null)
+const opusEncoder = ref<any>(null)
+const mediaStream = ref<MediaStream | null>(null)
+const micPermissionGranted = ref(false)
+const micPermissionDenied = ref(false)
 const isConnected = ref(false)
 
 // Initialize Web Audio API and Opus decoder
@@ -38,6 +42,90 @@ const initAudio = async () => {
   } catch (error) {
     console.error('Failed to initialize audio:', error)
     emit('error', `Audio initialization failed: ${error}`)
+  }
+}
+
+// Request microphone permission
+const requestMicPermission = async (): Promise<boolean> => {
+  if (micPermissionGranted.value) {
+    return true // Already granted
+  }
+
+  if (micPermissionDenied.value) {
+    emit('error', 'Microphone permission was previously denied. Please enable it in browser settings.')
+    return false
+  }
+
+  try {
+    console.log('Requesting microphone permission...')
+    
+    // Request microphone access with echo cancellation
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        sampleRate: 8000,
+        channelCount: 1
+      }
+    })
+
+    mediaStream.value = stream
+    micPermissionGranted.value = true
+    console.log('Microphone permission granted')
+    
+    // Initialize Opus encoder for transmit
+    await initOpusEncoder()
+    
+    return true
+  } catch (error: any) {
+    console.error('Microphone permission denied:', error)
+    
+    if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+      micPermissionDenied.value = true
+      emit('error', 'Microphone permission denied. Please allow microphone access to transmit.')
+    } else if (error.name === 'NotFoundError') {
+      emit('error', 'No microphone found. Please connect a microphone to transmit.')
+    } else {
+      emit('error', `Microphone error: ${error.message}`)
+    }
+    
+    return false
+  }
+}
+
+// Initialize Opus encoder for transmit
+const initOpusEncoder = async () => {
+  try {
+    // Import opus-recorder
+    const { default: Recorder } = await import('opus-recorder')
+    
+    if (!mediaStream.value) {
+      throw new Error('No media stream available')
+    }
+
+    // Create Opus recorder
+    opusEncoder.value = new Recorder({
+      encoderPath: '/opus-recorder/encoderWorker.min.js',
+      encoderSampleRate: 8000,
+      encoderApplication: 2048, // VOIP application
+      streamPages: true,
+      numberOfChannels: 1,
+      encoderComplexity: 10,
+      encoderBitRate: 12000, // 12kbps as per spec
+      encoderFrameSize: 20, // 20ms frames
+      sourceNode: mediaStream.value
+    })
+
+    // Handle encoded data
+    opusEncoder.value.ondataavailable = (typedArray: Uint8Array) => {
+      sendAudioData(typedArray)
+    }
+
+    console.log('Opus encoder initialized')
+  } catch (error) {
+    console.error('Failed to initialize Opus encoder:', error)
+    emit('error', `Encoder initialization failed: ${error}`)
   }
 }
 
@@ -177,6 +265,96 @@ const playAudio = (pcmData: Float32Array) => {
   }
 }
 
+// Start PTT (Push-to-Talk)
+const startPTT = async (password?: string): Promise<boolean> => {
+  if (!isConnected.value) {
+    emit('error', 'Not connected to server')
+    return false
+  }
+
+  // Request microphone permission if not already granted
+  const hasPermission = await requestMicPermission()
+  if (!hasPermission) {
+    return false
+  }
+
+  if (!opusEncoder.value) {
+    emit('error', 'Encoder not initialized')
+    return false
+  }
+
+  try {
+    // Send PTT press message
+    const pttMsg: any = {
+      type: 'ptt_press',
+      module: props.module,
+      callsign: props.callsign
+    }
+    
+    if (password) {
+      pttMsg.password = password
+    }
+    
+    ws.value?.send(JSON.stringify(pttMsg))
+    
+    // Start recording
+    opusEncoder.value.start()
+    
+    console.log('PTT started')
+    return true
+  } catch (error) {
+    console.error('Failed to start PTT:', error)
+    emit('error', `Failed to start transmit: ${error}`)
+    return false
+  }
+}
+
+// Stop PTT
+const stopPTT = () => {
+  if (!opusEncoder.value) return
+
+  try {
+    // Stop recording
+    opusEncoder.value.stop()
+    
+    // Send PTT release message
+    const pttMsg = {
+      type: 'ptt_release',
+      module: props.module,
+      callsign: props.callsign
+    }
+    ws.value?.send(JSON.stringify(pttMsg))
+    
+    console.log('PTT stopped')
+  } catch (error) {
+    console.error('Failed to stop PTT:', error)
+  }
+}
+
+// Send encoded audio data to server
+const sendAudioData = (opusData: Uint8Array) => {
+  if (!ws.value || ws.value.readyState !== WebSocket.OPEN) {
+    console.warn('WebSocket not open, cannot send audio')
+    return
+  }
+
+  try {
+    // Convert Opus data to base64
+    const base64 = btoa(String.fromCharCode(...opusData))
+    
+    const audioMsg = {
+      type: 'audio_data',
+      module: props.module,
+      callsign: props.callsign,
+      opus: base64
+    }
+    
+    ws.value.send(JSON.stringify(audioMsg))
+  } catch (error) {
+    console.error('Failed to send audio data:', error)
+  }
+}
+
 // Lifecycle hooks
 onMounted(async () => {
   await initAudio()
@@ -184,6 +362,22 @@ onMounted(async () => {
 
 onUnmounted(() => {
   disconnect()
+  
+  // Stop encoder if running
+  if (opusEncoder.value) {
+    try {
+      opusEncoder.value.stop()
+    } catch (e) {
+      // Ignore errors during cleanup
+    }
+  }
+  
+  // Stop media stream tracks
+  if (mediaStream.value) {
+    mediaStream.value.getTracks().forEach(track => track.stop())
+  }
+  
+  // Close audio context
   if (audioContext.value) {
     audioContext.value.close()
   }
@@ -194,7 +388,12 @@ onUnmounted(() => {
 defineExpose({
   connect,
   disconnect,
-  isConnected
+  isConnected,
+  requestMicPermission,
+  startPTT,
+  stopPTT,
+  micPermissionGranted,
+  micPermissionDenied
 })
 </script>
 
