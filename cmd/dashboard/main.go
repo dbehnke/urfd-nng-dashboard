@@ -18,6 +18,7 @@ import (
 	"github.com/dbehnke/urfd-nng-dashboard/internal/nng"
 	"github.com/dbehnke/urfd-nng-dashboard/internal/server"
 	"github.com/dbehnke/urfd-nng-dashboard/internal/store"
+	"github.com/dbehnke/urfd-nng-dashboard/internal/voice"
 )
 
 var (
@@ -341,6 +342,18 @@ func main() {
 
 	// 7. Start HTTP Server
 	srv := server.NewServer(hub, assets.GetAssets())
+
+	// Configure voice if enabled
+	if cfg.Voice.Enable {
+		srv.VoiceConfig = &voice.SessionConfig{
+			RequirePassword:  cfg.Voice.TransmitPassword != "",
+			TransmitPassword: cfg.Voice.TransmitPassword,
+			MaxTxDuration:    time.Duration(cfg.Voice.MaxTxDuration) * time.Second,
+			OpusBitrate:      cfg.Voice.OpusBitrate,
+			ReflectorAddr:    cfg.Voice.ReflectorAddr,
+		}
+		logger.Log.Info("Voice chat enabled", zap.String("reflector_addr", cfg.Voice.ReflectorAddr))
+	}
 
 	// API Routes
 	http.HandleFunc("/api/history", func(w http.ResponseWriter, r *http.Request) {
