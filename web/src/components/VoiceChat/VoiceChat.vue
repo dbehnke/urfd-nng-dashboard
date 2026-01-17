@@ -6,6 +6,7 @@ import VoiceEngine from './VoiceEngine.vue'
 import PTTButton from './PTTButton.vue'
 import PasswordDialog from './PasswordDialog.vue'
 import AudioLevelMeter from './AudioLevelMeter.vue'
+import DataUsageIndicator from './DataUsageIndicator.vue'
 import { Radio, AlertCircle } from 'lucide-vue-next'
 
 // Stores
@@ -235,6 +236,19 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
         :level="voiceEngine?.txLevel || 0" 
         label="TX"
       />
+    </div>
+
+    <!-- Data Usage Indicator -->
+    <div v-if="voiceStore.callsign && voiceStore.selectedModule && voiceEngine?.isConnected" class="px-2">
+      <DataUsageIndicator :get-data-usage="() => voiceEngine?.getDataUsage() || {
+        bytesReceived: 0,
+        bytesSent: 0,
+        totalBytes: 0,
+        totalKB: 0,
+        totalMB: 0,
+        duration: 0,
+        rateKbps: 0
+      }" />
     </div>
 
     <!-- PTT Button -->

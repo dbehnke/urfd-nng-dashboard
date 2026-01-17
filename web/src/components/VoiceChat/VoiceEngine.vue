@@ -64,6 +64,41 @@ const mediaSessionSupported = ref(false)
 const wakeLock = ref<any>(null)
 const wakeLockSupported = ref(false)
 
+// Data usage tracking
+const bytesReceived = ref(0)
+const bytesSent = ref(0)
+const sessionStartTime = ref<number | null>(null)
+
+const getDataUsage = () => {
+  const totalBytes = bytesReceived.value + bytesSent.value
+  const totalKB = (totalBytes / 1024).toFixed(2)
+  const totalMB = (totalBytes / (1024 * 1024)).toFixed(2)
+  
+  const duration = sessionStartTime.value 
+    ? (Date.now() - sessionStartTime.value) / 1000 
+    : 0
+  
+  const rateKbps = duration > 0 
+    ? ((totalBytes * 8) / (duration * 1000)).toFixed(2)
+    : '0'
+  
+  return {
+    bytesReceived: bytesReceived.value,
+    bytesSent: bytesSent.value,
+    totalBytes,
+    totalKB: parseFloat(totalKB),
+    totalMB: parseFloat(totalMB),
+    duration: Math.round(duration),
+    rateKbps: parseFloat(rateKbps)
+  }
+}
+
+const resetDataUsage = () => {
+  bytesReceived.value = 0
+  bytesSent.value = 0
+  sessionStartTime.value = null
+}
+
 const logDiagnostic = (type: string, details: any = {}) => {
   const event: DiagnosticEvent = {
     timestamp: Date.now(),
@@ -207,6 +242,24 @@ const releaseWakeLock = async () => {
   } catch (error) {
     console.error('Failed to release Wake Lock:', error)
     wakeLock.value = null
+  }
+}
+
+// Resume AudioContext (required for iOS Safari)
+const resumeAudioContext = async () => {
+  if (!audioContext.value) return
+  
+  try {
+    if (audioContext.value.state === 'suspended') {
+      await audioContext.value.resume()
+      logDiagnostic('audio_context_resumed', {
+        state: audioContext.value.state
+      })
+      console.log('AudioContext resumed from suspended state')
+    }
+  } catch (error) {
+    console.error('Failed to resume AudioContext:', error)
+    logDiagnostic('audio_context_resume_error', { error: String(error) })
   }
 }
 
@@ -395,7 +448,7 @@ const getAudioLevel = (analyser: AnalyserNode): number => {
 }
 
 // Connect to WebSocket
-const connect = () => {
+const connect = async () => {
   if (!props.module || !props.callsign) {
     console.warn('Cannot connect: module or callsign missing')
     logDiagnostic('connect_abort', { reason: 'missing_credentials' })
@@ -412,6 +465,9 @@ const connect = () => {
   }
 
   try {
+    // Resume AudioContext if suspended (iOS requirement)
+    await resumeAudioContext()
+    
     logDiagnostic('ws_connect_attempt', { 
       url: props.websocketUrl, 
       module: props.module,
@@ -424,6 +480,10 @@ const connect = () => {
       console.log('WebSocket connected')
       isConnected.value = true
       reconnectAttempts.value = 0 // Reset reconnect counter on successful connection
+      
+      // Start tracking data usage
+      sessionStartTime.value = Date.now()
+      resetDataUsage()
       
       logDiagnostic('ws_connected', { 
         module: props.module,
@@ -443,11 +503,22 @@ const connect = () => {
         callsign: props.callsign
       }
       ws.value?.send(JSON.stringify(startMsg))
+      
+      // Track sent bytes
+      const msgSize = JSON.stringify(startMsg).length
+      bytesSent.value += msgSize
+      
       logDiagnostic('ws_voice_start_sent', startMsg)
     }
     
     ws.value.onmessage = async (event) => {
       try {
+        // Track received bytes
+        const msgSize = typeof event.data === 'string' 
+          ? event.data.length 
+          : event.data.size || 0
+        bytesReceived.value += msgSize
+        
         const data = JSON.parse(event.data)
         
         switch (data.type) {
@@ -666,6 +737,9 @@ const startPTT = async (password?: string): Promise<boolean> => {
   }
 
   try {
+    // Resume AudioContext if suspended (iOS requirement)
+    await resumeAudioContext()
+    
     // Send PTT press message
     const pttMsg: any = {
       type: 'ptt_press',
@@ -769,6 +843,10 @@ const sendAudioData = (opusData: Uint8Array) => {
     }
     
     ws.value.send(JSON.stringify(audioMsg))
+    
+    // Track sent bytes
+    const msgSize = JSON.stringify(audioMsg).length
+    bytesSent.value += msgSize
   } catch (error) {
     console.error('Failed to send audio data:', error)
   }
@@ -780,10 +858,20 @@ onMounted(async () => {
   
   // Re-acquire Wake Lock when page becomes visible (important for mobile)
   document.addEventListener('visibilitychange', async () => {
-    if (document.visibilityState === 'visible' && isConnected.value) {
-      // Wake Lock is automatically released when page becomes hidden
-      // Re-acquire it when page becomes visible again
-      await requestWakeLock()
+    if (document.visibilityState === 'visible') {
+      // Resume AudioContext if suspended (iOS requirement)
+      await resumeAudioContext()
+      
+      if (isConnected.value) {
+        // Wake Lock is automatically released when page becomes hidden
+        // Re-acquire it when page becomes visible again
+        await requestWakeLock()
+      } else if (shouldReconnect.value && props.module && props.callsign) {
+        // Auto-reconnect if we were connected before going to background
+        console.log('App resumed from background, attempting reconnection...')
+        logDiagnostic('app_resume_reconnect', {})
+        connect()
+      }
     }
   })
 })
@@ -845,7 +933,12 @@ defineExpose({
   diagnosticLog,
   activeTalker,
   mediaSessionSupported,
-  wakeLockSupported
+  wakeLockSupported,
+  getDataUsage,
+  resetDataUsage,
+  bytesReceived,
+  bytesSent,
+  resumeAudioContext
 })
 </script>
 
