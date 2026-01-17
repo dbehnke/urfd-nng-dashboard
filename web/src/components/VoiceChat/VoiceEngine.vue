@@ -27,15 +27,30 @@ const isConnected = ref(false)
 const currentState = ref<'listening' | 'transmitting' | 'rx_busy' | 'disconnected'>('disconnected')
 const isReceivingAudio = ref(false)
 
+// Audio level monitoring
+const rxAnalyser = ref<AnalyserNode | null>(null)
+const txAnalyser = ref<AnalyserNode | null>(null)
+const rxLevel = ref(0)
+const txLevel = ref(0)
+let levelMonitorInterval: number | null = null
+
 // Initialize Web Audio API and Opus decoder
 const initAudio = async () => {
   try {
     // Create AudioContext
     audioContext.value = new AudioContext({ sampleRate: 8000 })
     
+    // Create analyser nodes for audio level monitoring
+    rxAnalyser.value = audioContext.value.createAnalyser()
+    rxAnalyser.value.fftSize = 256
+    rxAnalyser.value.smoothingTimeConstant = 0.8
+    
     // Initialize Opus decoder (dynamically import)
     const OpusModule = await import('libopus.js')
     opusDecoder.value = await OpusModule.default()
+    
+    // Start audio level monitoring
+    startLevelMonitoring()
     
     console.log('Audio engine initialized', {
       sampleRate: audioContext.value.sampleRate,
@@ -106,6 +121,17 @@ const initOpusEncoder = async () => {
       throw new Error('No media stream available')
     }
 
+    // Create analyser for TX audio monitoring
+    if (audioContext.value && !txAnalyser.value) {
+      txAnalyser.value = audioContext.value.createAnalyser()
+      txAnalyser.value.fftSize = 256
+      txAnalyser.value.smoothingTimeConstant = 0.8
+      
+      // Connect media stream to analyser
+      const source = audioContext.value.createMediaStreamSource(mediaStream.value)
+      source.connect(txAnalyser.value)
+    }
+
     // Create Opus recorder
     opusEncoder.value = new Recorder({
       encoderPath: '/opus-recorder/encoderWorker.min.js',
@@ -129,6 +155,56 @@ const initOpusEncoder = async () => {
     console.error('Failed to initialize Opus encoder:', error)
     emit('error', `Encoder initialization failed: ${error}`)
   }
+}
+
+// Start audio level monitoring
+const startLevelMonitoring = () => {
+  if (levelMonitorInterval) return
+  
+  levelMonitorInterval = window.setInterval(() => {
+    // Monitor RX level
+    if (rxAnalyser.value && isReceivingAudio.value) {
+      rxLevel.value = getAudioLevel(rxAnalyser.value)
+    } else {
+      rxLevel.value = 0
+    }
+    
+    // Monitor TX level
+    if (txAnalyser.value && currentState.value === 'transmitting') {
+      txLevel.value = getAudioLevel(txAnalyser.value)
+    } else {
+      txLevel.value = 0
+    }
+  }, 50) // Update every 50ms
+}
+
+// Stop audio level monitoring
+const stopLevelMonitoring = () => {
+  if (levelMonitorInterval) {
+    clearInterval(levelMonitorInterval)
+    levelMonitorInterval = null
+  }
+  rxLevel.value = 0
+  txLevel.value = 0
+}
+
+// Get audio level from analyser (0-100)
+const getAudioLevel = (analyser: AnalyserNode): number => {
+  const dataArray = new Uint8Array(analyser.frequencyBinCount)
+  analyser.getByteFrequencyData(dataArray)
+  
+  // Calculate RMS (root mean square) level
+  let sum = 0
+  for (let i = 0; i < dataArray.length; i++) {
+    const value = dataArray[i]
+    if (value !== undefined) {
+      sum += value * value
+    }
+  }
+  const rms = Math.sqrt(sum / dataArray.length)
+  
+  // Convert to 0-100 scale
+  return (rms / 255) * 100
 }
 
 // Connect to WebSocket
@@ -273,10 +349,17 @@ const playAudio = (pcmData: Float32Array) => {
     // Copy PCM data to buffer
     audioBuffer.getChannelData(0).set(pcmData)
     
-    // Create buffer source and play
+    // Create buffer source and connect through analyser for RX level monitoring
     const source = audioContext.value.createBufferSource()
     source.buffer = audioBuffer
-    source.connect(audioContext.value.destination)
+    
+    if (rxAnalyser.value) {
+      source.connect(rxAnalyser.value)
+      rxAnalyser.value.connect(audioContext.value.destination)
+    } else {
+      source.connect(audioContext.value.destination)
+    }
+    
     source.start()
   } catch (error) {
     console.error('Error playing audio:', error)
@@ -387,6 +470,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  stopLevelMonitoring()
   disconnect()
   
   // Stop encoder if running
@@ -421,7 +505,9 @@ defineExpose({
   micPermissionGranted,
   micPermissionDenied,
   currentState,
-  isReceivingAudio
+  isReceivingAudio,
+  rxLevel,
+  txLevel
 })
 </script>
 

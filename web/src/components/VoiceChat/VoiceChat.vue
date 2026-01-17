@@ -5,6 +5,7 @@ import { useReflectorStore } from '@/stores/reflector'
 import VoiceEngine from './VoiceEngine.vue'
 import PTTButton from './PTTButton.vue'
 import PasswordDialog from './PasswordDialog.vue'
+import AudioLevelMeter from './AudioLevelMeter.vue'
 import { Radio, AlertCircle } from 'lucide-vue-next'
 
 // Stores
@@ -28,12 +29,11 @@ const transcodedModules = computed(() => {
   // Only show transcoded modules (not interlinked modules)
   // Based on reflector config, transcoded modules typically have VoiceEnable
   const modules = reflectorStore.modules || []
-  const config = reflectorStore.config || {}
   
   // Filter to only transcoded modules
   // Assuming transcoded modules are in config.Voice or similar
   // For now, return all modules - this can be refined based on actual config structure
-  return modules.map(m => m.Name)
+  return modules.map((m: any) => m.Name)
 })
 
 const stateDisplay = computed(() => {
@@ -223,6 +223,18 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
           Module {{ module }}
         </option>
       </select>
+    </div>
+
+    <!-- Audio Level Meters -->
+    <div v-if="voiceStore.callsign && voiceStore.selectedModule" class="flex flex-col gap-2 px-2">
+      <AudioLevelMeter 
+        :level="voiceEngine?.rxLevel || 0" 
+        label="RX"
+      />
+      <AudioLevelMeter 
+        :level="voiceEngine?.txLevel || 0" 
+        label="TX"
+      />
     </div>
 
     <!-- PTT Button -->
