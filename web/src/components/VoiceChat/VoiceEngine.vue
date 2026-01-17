@@ -41,6 +41,11 @@ const reconnectDelay = 2000 // Start with 2 seconds
 let reconnectTimeout: number | null = null
 const shouldReconnect = ref(true)
 
+// Session timeout enforcement
+const maxTransmitDuration = 120000 // 120 seconds in milliseconds
+let transmitStartTime: number | null = null
+let transmitTimeoutHandle: number | null = null
+
 // Initialize Web Audio API and Opus decoder
 const initAudio = async () => {
   try {
@@ -457,6 +462,14 @@ const startPTT = async (password?: string): Promise<boolean> => {
     // Start recording
     opusEncoder.value.start()
     
+    // Start transmit timer
+    transmitStartTime = Date.now()
+    transmitTimeoutHandle = window.setTimeout(() => {
+      console.warn('Max transmit duration reached, stopping PTT')
+      emit('error', `Maximum transmit duration (${maxTransmitDuration / 1000}s) reached`)
+      stopPTT()
+    }, maxTransmitDuration)
+    
     currentState.value = 'transmitting'
     console.log('PTT started')
     return true
@@ -470,6 +483,19 @@ const startPTT = async (password?: string): Promise<boolean> => {
 // Stop PTT
 const stopPTT = () => {
   if (!opusEncoder.value) return
+
+  // Clear transmit timeout
+  if (transmitTimeoutHandle) {
+    clearTimeout(transmitTimeoutHandle)
+    transmitTimeoutHandle = null
+  }
+
+  // Log transmit duration
+  if (transmitStartTime) {
+    const duration = Date.now() - transmitStartTime
+    console.log(`PTT stopped after ${(duration / 1000).toFixed(1)}s`)
+    transmitStartTime = null
+  }
 
   try {
     // Stop recording
@@ -522,6 +548,13 @@ onMounted(async () => {
 onUnmounted(() => {
   stopLevelMonitoring()
   cancelReconnect()
+  
+  // Clear transmit timeout
+  if (transmitTimeoutHandle) {
+    clearTimeout(transmitTimeoutHandle)
+    transmitTimeoutHandle = null
+  }
+  
   disconnect()
   
   // Stop encoder if running
