@@ -46,9 +46,50 @@ const maxTransmitDuration = 120000 // 120 seconds in milliseconds
 let transmitStartTime: number | null = null
 let transmitTimeoutHandle: number | null = null
 
+// Diagnostic logging
+interface DiagnosticEvent {
+  timestamp: number
+  type: string
+  details: any
+}
+
+const diagnosticLog = ref<DiagnosticEvent[]>([])
+const maxLogEntries = 100
+
+const logDiagnostic = (type: string, details: any = {}) => {
+  const event: DiagnosticEvent = {
+    timestamp: Date.now(),
+    type,
+    details
+  }
+  
+  diagnosticLog.value.push(event)
+  
+  // Keep only recent entries
+  if (diagnosticLog.value.length > maxLogEntries) {
+    diagnosticLog.value.shift()
+  }
+  
+  // Also log to console in development
+  if (import.meta.env.DEV) {
+    console.log(`[VoiceEngine] ${type}:`, details)
+  }
+}
+
+// Export diagnostic log
+const getDiagnosticLog = () => {
+  return diagnosticLog.value.map(event => ({
+    time: new Date(event.timestamp).toISOString(),
+    type: event.type,
+    details: event.details
+  }))
+}
+
 // Initialize Web Audio API and Opus decoder
 const initAudio = async () => {
   try {
+    logDiagnostic('audio_init_start', {})
+    
     // Create AudioContext
     audioContext.value = new AudioContext({ sampleRate: 8000 })
     
@@ -64,11 +105,17 @@ const initAudio = async () => {
     // Start audio level monitoring
     startLevelMonitoring()
     
+    logDiagnostic('audio_init_success', {
+      sampleRate: audioContext.value.sampleRate,
+      state: audioContext.value.state
+    })
+    
     console.log('Audio engine initialized', {
       sampleRate: audioContext.value.sampleRate,
       state: audioContext.value.state
     })
   } catch (error) {
+    logDiagnostic('audio_init_error', { error: String(error) })
     console.error('Failed to initialize audio:', error)
     emit('error', `Audio initialization failed: ${error}`)
   }
@@ -223,6 +270,7 @@ const getAudioLevel = (analyser: AnalyserNode): number => {
 const connect = () => {
   if (!props.module || !props.callsign) {
     console.warn('Cannot connect: module or callsign missing')
+    logDiagnostic('connect_abort', { reason: 'missing_credentials' })
     return
   }
 
@@ -236,12 +284,23 @@ const connect = () => {
   }
 
   try {
+    logDiagnostic('ws_connect_attempt', { 
+      url: props.websocketUrl, 
+      module: props.module,
+      callsign: props.callsign
+    })
+    
     ws.value = new WebSocket(props.websocketUrl)
     
     ws.value.onopen = () => {
       console.log('WebSocket connected')
       isConnected.value = true
       reconnectAttempts.value = 0 // Reset reconnect counter on successful connection
+      
+      logDiagnostic('ws_connected', { 
+        module: props.module,
+        callsign: props.callsign
+      })
       
       // Send voice_start message
       const startMsg = {
@@ -250,6 +309,7 @@ const connect = () => {
         callsign: props.callsign
       }
       ws.value?.send(JSON.stringify(startMsg))
+      logDiagnostic('ws_voice_start_sent', startMsg)
     }
     
     ws.value.onmessage = async (event) => {
@@ -425,23 +485,27 @@ const playAudio = (pcmData: Float32Array) => {
 const startPTT = async (password?: string): Promise<boolean> => {
   if (!isConnected.value) {
     emit('error', 'Not connected to server')
+    logDiagnostic('ptt_start_failed', { reason: 'not_connected' })
     return false
   }
 
   // Half-duplex: Check if currently receiving audio
   if (isReceivingAudio.value || currentState.value === 'rx_busy') {
     emit('error', 'Cannot transmit while receiving audio (half-duplex mode)')
+    logDiagnostic('ptt_start_failed', { reason: 'rx_busy' })
     return false
   }
 
   // Request microphone permission if not already granted
   const hasPermission = await requestMicPermission()
   if (!hasPermission) {
+    logDiagnostic('ptt_start_failed', { reason: 'no_mic_permission' })
     return false
   }
 
   if (!opusEncoder.value) {
     emit('error', 'Encoder not initialized')
+    logDiagnostic('ptt_start_failed', { reason: 'encoder_not_initialized' })
     return false
   }
 
@@ -467,15 +531,22 @@ const startPTT = async (password?: string): Promise<boolean> => {
     transmitTimeoutHandle = window.setTimeout(() => {
       console.warn('Max transmit duration reached, stopping PTT')
       emit('error', `Maximum transmit duration (${maxTransmitDuration / 1000}s) reached`)
+      logDiagnostic('ptt_timeout', { duration: maxTransmitDuration })
       stopPTT()
     }, maxTransmitDuration)
     
     currentState.value = 'transmitting'
+    logDiagnostic('ptt_started', { 
+      module: props.module,
+      callsign: props.callsign,
+      hasPassword: !!password
+    })
     console.log('PTT started')
     return true
   } catch (error) {
     console.error('Failed to start PTT:', error)
     emit('error', `Failed to start transmit: ${error}`)
+    logDiagnostic('ptt_start_error', { error: String(error) })
     return false
   }
 }
@@ -491,8 +562,9 @@ const stopPTT = () => {
   }
 
   // Log transmit duration
+  let duration = 0
   if (transmitStartTime) {
-    const duration = Date.now() - transmitStartTime
+    duration = Date.now() - transmitStartTime
     console.log(`PTT stopped after ${(duration / 1000).toFixed(1)}s`)
     transmitStartTime = null
   }
@@ -510,9 +582,15 @@ const stopPTT = () => {
     ws.value?.send(JSON.stringify(pttMsg))
     
     currentState.value = 'listening'
+    logDiagnostic('ptt_stopped', { 
+      duration,
+      module: props.module,
+      callsign: props.callsign
+    })
     console.log('PTT stopped')
   } catch (error) {
     console.error('Failed to stop PTT:', error)
+    logDiagnostic('ptt_stop_error', { error: String(error) })
   }
 }
 
@@ -591,7 +669,9 @@ defineExpose({
   currentState,
   isReceivingAudio,
   rxLevel,
-  txLevel
+  txLevel,
+  getDiagnosticLog,
+  diagnosticLog
 })
 </script>
 
