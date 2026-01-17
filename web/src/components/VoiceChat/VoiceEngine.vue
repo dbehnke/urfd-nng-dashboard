@@ -34,6 +34,13 @@ const rxLevel = ref(0)
 const txLevel = ref(0)
 let levelMonitorInterval: number | null = null
 
+// Connection recovery
+const reconnectAttempts = ref(0)
+const maxReconnectAttempts = 5
+const reconnectDelay = 2000 // Start with 2 seconds
+let reconnectTimeout: number | null = null
+const shouldReconnect = ref(true)
+
 // Initialize Web Audio API and Opus decoder
 const initAudio = async () => {
   try {
@@ -214,12 +221,22 @@ const connect = () => {
     return
   }
 
+  // Enable reconnection for this session
+  shouldReconnect.value = true
+
+  // Clear any pending reconnect
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout)
+    reconnectTimeout = null
+  }
+
   try {
     ws.value = new WebSocket(props.websocketUrl)
     
     ws.value.onopen = () => {
       console.log('WebSocket connected')
       isConnected.value = true
+      reconnectAttempts.value = 0 // Reset reconnect counter on successful connection
       
       // Send voice_start message
       const startMsg = {
@@ -268,12 +285,17 @@ const connect = () => {
       emit('error', 'WebSocket connection error')
     }
     
-    ws.value.onclose = () => {
-      console.log('WebSocket disconnected')
+    ws.value.onclose = (event) => {
+      console.log('WebSocket disconnected', event.code, event.reason)
       isConnected.value = false
       currentState.value = 'disconnected'
       isReceivingAudio.value = false
       emit('stateChange', 'disconnected')
+      
+      // Attempt reconnection if appropriate
+      if (shouldReconnect.value && !event.wasClean && reconnectAttempts.value < maxReconnectAttempts) {
+        attemptReconnect()
+      }
     }
   } catch (error) {
     console.error('Failed to connect WebSocket:', error)
@@ -281,8 +303,36 @@ const connect = () => {
   }
 }
 
+// Attempt to reconnect with exponential backoff
+const attemptReconnect = () => {
+  if (reconnectTimeout) return // Already attempting
+  
+  reconnectAttempts.value++
+  const delay = reconnectDelay * Math.pow(2, reconnectAttempts.value - 1) // Exponential backoff
+  
+  console.log(`Attempting reconnect ${reconnectAttempts.value}/${maxReconnectAttempts} in ${delay}ms`)
+  emit('error', `Connection lost. Reconnecting in ${delay / 1000}s... (attempt ${reconnectAttempts.value}/${maxReconnectAttempts})`)
+  
+  reconnectTimeout = window.setTimeout(() => {
+    reconnectTimeout = null
+    connect()
+  }, delay)
+}
+
+// Cancel reconnection attempts
+const cancelReconnect = () => {
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout)
+    reconnectTimeout = null
+  }
+  reconnectAttempts.value = 0
+}
+
 // Disconnect from WebSocket
 const disconnect = () => {
+  shouldReconnect.value = false // Prevent automatic reconnection
+  cancelReconnect()
+  
   if (ws.value) {
     // Send voice_stop message
     const stopMsg = { type: 'voice_stop' }
@@ -471,6 +521,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopLevelMonitoring()
+  cancelReconnect()
   disconnect()
   
   // Stop encoder if running
