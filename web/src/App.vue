@@ -6,6 +6,7 @@ import { useThemeStore } from './stores/theme'
 import { useLiveStore } from './stores/live'
 import AppShell from './layouts/AppShell.vue'
 import AudioEngine from './components/AudioPlayer/AudioEngine.vue'
+import VoiceChat from './components/VoiceChat/VoiceChat.vue'
 
 const theme = useThemeStore()
 const live = useLiveStore()
@@ -63,6 +64,11 @@ const handleNavClick = () => {
           <span>DMR</span>
         </RouterLink>
       </nav>
+
+      <!-- Voice Chat Widget -->
+      <div class="mt-6">
+        <VoiceChat />
+      </div>
     </template>
 
     <!-- Main Content -->
