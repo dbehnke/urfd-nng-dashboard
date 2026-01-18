@@ -17,11 +17,14 @@ type VoiceClientPool struct {
 
 // SharedVoiceClient wraps a VoiceClient with session management
 type SharedVoiceClient struct {
-	client   *VoiceClient
-	sessions map[string]*Session // key: session ID
-	mu       sync.RWMutex
-	refCount int
-	module   string
+	client         *VoiceClient
+	sessions       map[string]*Session // key: session ID
+	mu             sync.RWMutex
+	refCount       int
+	module         string
+	activeTalker   string       // callsign of current transmitter (empty = none)
+	activeTalkerMu sync.RWMutex // protects activeTalker
+	sessionsMu     sync.RWMutex // protects sessions map
 }
 
 // NewVoiceClientPool creates a new voice client pool
@@ -176,26 +179,42 @@ func (p *VoiceClientPool) ReleaseClient(module, sessionID string) {
 
 // RegisterSession registers a session with the shared client
 func (s *SharedVoiceClient) RegisterSession(session *Session) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.sessionsMu.Lock()
+	defer s.sessionsMu.Unlock()
 	s.sessions[session.ID] = session
-	log.Printf("SharedVoiceClient[%s]: Registered session %s (total: %d)", s.module, session.ID, len(s.sessions))
+	log.Printf("SharedVoiceClient[%s]: Registered session %s (%s on module %s)", s.module, session.ID, session.Callsign, session.Module)
 }
 
 // UnregisterSession unregisters a session
 func (s *SharedVoiceClient) UnregisterSession(sessionID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.sessionsMu.Lock()
+	session, exists := s.sessions[sessionID]
+	if !exists {
+		s.sessionsMu.Unlock()
+		return
+	}
+
+	// Get callsign before deleting
+	callsign := session.Callsign
 	delete(s.sessions, sessionID)
-	log.Printf("SharedVoiceClient[%s]: Unregistered session %s (remaining: %d)", s.module, sessionID, len(s.sessions))
+	remaining := len(s.sessions)
+	s.sessionsMu.Unlock()
+
+	// If this session was the active talker, release PTT
+	if callsign != "" {
+		s.ReleasePTT(sessionID, callsign)
+	}
+
+	log.Printf("SharedVoiceClient[%s]: Unregistered session %s (remaining: %d)", s.module, sessionID, remaining)
 }
 
 // BroadcastAudioToSessions sends audio to all registered sessions on this module
+// This is for audio coming FROM the urfd reflector
 func (s *SharedVoiceClient) BroadcastAudioToSessions(msg VoiceMessage) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.sessionsMu.RLock()
+	defer s.sessionsMu.RUnlock()
 
-	log.Printf("SharedVoiceClient[%s]: Broadcasting audio from %s to %d sessions", s.module, msg.Callsign, len(s.sessions))
+	log.Printf("SharedVoiceClient[%s]: Broadcasting reflector audio from %s to %d sessions", s.module, msg.Callsign, len(s.sessions))
 
 	// Broadcast to all sessions except the sender
 	broadcastCount := 0
@@ -205,7 +224,7 @@ func (s *SharedVoiceClient) BroadcastAudioToSessions(msg VoiceMessage) {
 
 		// Only forward if session is listening to this module and not the sender
 		if session.Module == msg.Module && session.Callsign != msg.Callsign {
-			log.Printf("SharedVoiceClient[%s]: Forwarding audio to session %s (%s)", s.module, sessionID, session.Callsign)
+			log.Printf("SharedVoiceClient[%s]: Forwarding reflector audio to session %s (%s)", s.module, sessionID, session.Callsign)
 			session.handleAudioFromReflector(msg)
 			broadcastCount++
 		} else {
@@ -219,8 +238,8 @@ func (s *SharedVoiceClient) BroadcastAudioToSessions(msg VoiceMessage) {
 
 // BroadcastStateToSessions sends state updates to all sessions
 func (s *SharedVoiceClient) BroadcastStateToSessions(msg VoiceMessage) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.sessionsMu.RLock()
+	defer s.sessionsMu.RUnlock()
 
 	for _, session := range s.sessions {
 		if session.Module == msg.Module {
@@ -242,4 +261,70 @@ func (s *SharedVoiceClient) SendPTTStop(module, callsign string) error {
 // SendAudioData forwards audio data to reflector
 func (s *SharedVoiceClient) SendAudioData(module, callsign string, opusData []byte) error {
 	return s.client.SendAudioData(module, callsign, opusData)
+}
+
+// RequestPTT attempts to acquire PTT for a session
+// Returns error if PTT is already held by another callsign
+func (s *SharedVoiceClient) RequestPTT(sessionID, callsign string) error {
+	s.activeTalkerMu.Lock()
+	defer s.activeTalkerMu.Unlock()
+
+	// Check if someone else is already transmitting
+	if s.activeTalker != "" && s.activeTalker != callsign {
+		log.Printf("PTT denied for %s (active: %s)", callsign, s.activeTalker)
+		return fmt.Errorf("PTT denied - %s is transmitting", s.activeTalker)
+	}
+
+	// Grant PTT
+	s.activeTalker = callsign
+	log.Printf("PTT granted to %s", callsign)
+	return nil
+}
+
+// ReleasePTT releases PTT for a session
+// Only clears activeTalker if the callsign matches
+func (s *SharedVoiceClient) ReleasePTT(sessionID, callsign string) {
+	s.activeTalkerMu.Lock()
+	defer s.activeTalkerMu.Unlock()
+
+	// Only clear if this is the active talker
+	if s.activeTalker == callsign {
+		s.activeTalker = ""
+		log.Printf("PTT released by %s", callsign)
+	} else {
+		log.Printf("PTT release ignored for %s (active talker: %s)", callsign, s.activeTalker)
+	}
+}
+
+// BroadcastPeerAudio broadcasts audio from one session to all other sessions on the same module
+// This is for real-time peer-to-peer audio (browser to browser) without going through urfd
+func (s *SharedVoiceClient) BroadcastPeerAudio(opusData []byte, fromSessionID, fromCallsign, module string) {
+	s.sessionsMu.RLock()
+	defer s.sessionsMu.RUnlock()
+
+	log.Printf("SharedVoiceClient[%s]: Broadcasting peer audio from %s to %d sessions", s.module, fromCallsign, len(s.sessions))
+
+	// Broadcast to all sessions except the sender
+	broadcastCount := 0
+	for sessionID, session := range s.sessions {
+		// Skip if this is the sender
+		if sessionID == fromSessionID {
+			continue
+		}
+
+		// Skip if session is on a different module (module isolation)
+		if session.Module != module {
+			continue
+		}
+
+		// Send audio to this peer
+		if err := session.SendAudioFromPeer(opusData, fromCallsign); err != nil {
+			log.Printf("SharedVoiceClient[%s]: Failed to send peer audio to session %s: %v", s.module, sessionID, err)
+			// Continue trying to send to other sessions
+		} else {
+			broadcastCount++
+		}
+	}
+
+	log.Printf("SharedVoiceClient[%s]: Broadcast peer audio from %s to %d peers on module %s", s.module, fromCallsign, broadcastCount, module)
 }

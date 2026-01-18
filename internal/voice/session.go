@@ -266,12 +266,25 @@ func (s *Session) handlePTTPress(msg WSMessage) error {
 		return nil
 	}
 
-	// Send PTT start to reflector
+	// NEW: Request PTT from SharedClient (half-duplex enforcement)
 	if s.SharedClient == nil {
 		return fmt.Errorf("not connected to voice client")
 	}
+
+	if err := s.SharedClient.RequestPTT(s.ID, s.Callsign); err != nil {
+		// PTT denied - another user is transmitting
+		log.Printf("Session %s: PTT denied for %s: %v", s.ID, s.Callsign, err)
+		return s.sendMessage(WSMessage{
+			Type:   "ptt_denied",
+			Reason: err.Error(),
+		})
+	}
+
+	// PTT granted, send PTT start to reflector
 	if err := s.SharedClient.SendPTTStart(s.Module, s.Callsign); err != nil {
-		return fmt.Errorf("failed to send PTT start: %w", err)
+		// Failed to send to urfd, but still grant PTT for peer-to-peer
+		log.Printf("Session %s: Warning: Failed to send PTT start to urfd: %v", s.ID, err)
+		// Don't return error - peer audio will still work
 	}
 
 	s.State = StateTransmitting
@@ -333,8 +346,12 @@ func (s *Session) handlePTTRelease() error {
 		return fmt.Errorf("not connected to voice client")
 	}
 	if err := s.SharedClient.SendPTTStop(s.Module, s.Callsign); err != nil {
-		return fmt.Errorf("failed to send PTT stop: %w", err)
+		// Log warning but don't fail - peer audio already stopped
+		log.Printf("Session %s: Warning: Failed to send PTT stop to urfd: %v", s.ID, err)
 	}
+
+	// NEW: Release PTT in SharedClient
+	s.SharedClient.ReleasePTT(s.ID, s.Callsign)
 
 	duration := time.Since(s.txStartTime)
 	durationSecs := duration.Seconds()
@@ -397,12 +414,18 @@ func (s *Session) handleAudioData(msg WSMessage) error {
 		return fmt.Errorf("failed to decode opus data: %w", err)
 	}
 
-	// Send audio data to reflector
+	// NEW: Broadcast peer audio to other sessions on same module (real-time)
+	if s.SharedClient != nil {
+		s.SharedClient.BroadcastPeerAudio(opusData, s.ID, s.Callsign, s.Module)
+	}
+
+	// Send audio data to reflector (for recording)
 	if s.SharedClient == nil {
 		return fmt.Errorf("not connected to voice client")
 	}
 	if err := s.SharedClient.SendAudioData(s.Module, s.Callsign, opusData); err != nil {
-		return fmt.Errorf("failed to send audio data: %w", err)
+		// Log warning but don't fail - peer audio already sent
+		log.Printf("Session %s: Warning: Failed to send audio to urfd: %v", s.ID, err)
 	}
 
 	return nil
@@ -440,6 +463,43 @@ func (s *Session) handleAudioFromReflector(msg VoiceMessage) {
 	}
 
 	s.sendMessage(wsMsg)
+}
+
+// SendAudioFromPeer sends peer audio (from another browser) to this session
+// This is for real-time audio multiplexing between web clients
+func (s *Session) SendAudioFromPeer(opusData []byte, fromCallsign string) error {
+	s.mu.RLock()
+
+	// Only forward if we're listening (not idle or transmitting)
+	if s.State == StateIdle {
+		s.mu.RUnlock()
+		return nil // Silently ignore if session is idle
+	}
+
+	// Don't send if we're transmitting (we're the talker)
+	if s.State == StateTransmitting {
+		s.mu.RUnlock()
+		return nil // Silently ignore if session is transmitting
+	}
+
+	// Check if connection exists (for testing scenarios)
+	if s.Conn == nil {
+		s.mu.RUnlock()
+		return nil // Silently ignore if no connection (e.g., in tests)
+	}
+
+	s.mu.RUnlock()
+
+	// Encode Opus data as base64 for WebSocket
+	opusB64 := base64.StdEncoding.EncodeToString(opusData)
+
+	wsMsg := WSMessage{
+		Type: "peer_audio", // Different type to distinguish from reflector audio
+		Opus: opusB64,
+		From: fromCallsign,
+	}
+
+	return s.sendMessage(wsMsg)
 }
 
 // handleStateChange handles state changes from the reflector
