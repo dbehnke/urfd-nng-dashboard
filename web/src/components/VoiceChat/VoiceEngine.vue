@@ -71,21 +71,23 @@ const bytesSent = ref(0)
 const sessionStartTime = ref<number | null>(null)
 
 const getDataUsage = () => {
-  const totalBytes = bytesReceived.value + bytesSent.value
+  // Add null safety in case this is called after component unmount
+  const received = bytesReceived.value ?? 0
+  const sent = bytesSent.value ?? 0
+  const totalBytes = received + sent
   const totalKB = (totalBytes / 1024).toFixed(2)
   const totalMB = (totalBytes / (1024 * 1024)).toFixed(2)
   
-  const duration = sessionStartTime.value 
-    ? (Date.now() - sessionStartTime.value) / 1000 
-    : 0
+  const startTime = sessionStartTime.value ?? 0
+  const duration = startTime ? (Date.now() - startTime) / 1000 : 0
   
   const rateKbps = duration > 0 
     ? ((totalBytes * 8) / (duration * 1000)).toFixed(2)
     : '0'
   
   return {
-    bytesReceived: bytesReceived.value,
-    bytesSent: bytesSent.value,
+    bytesReceived: received,
+    bytesSent: sent,
     totalBytes,
     totalKB: parseFloat(totalKB),
     totalMB: parseFloat(totalMB),

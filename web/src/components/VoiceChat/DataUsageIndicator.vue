@@ -30,19 +30,24 @@ let updateInterval: number | null = null
 
 // Computed
 const displaySize = computed(() => {
-  if (usage.value.totalMB >= 1) {
-    return `${usage.value.totalMB.toFixed(2)} MB`
+  const totalMB = usage.value?.totalMB ?? 0
+  const totalKB = usage.value?.totalKB ?? 0
+  
+  if (totalMB >= 1) {
+    return `${totalMB.toFixed(2)} MB`
   }
-  return `${usage.value.totalKB.toFixed(2)} KB`
+  return `${totalKB.toFixed(2)} KB`
 })
 
 const displayRate = computed(() => {
-  return `${usage.value.rateKbps.toFixed(1)} kbps`
+  const rateKbps = usage.value?.rateKbps ?? 0
+  return `${rateKbps.toFixed(1)} kbps`
 })
 
 const displayDuration = computed(() => {
-  const minutes = Math.floor(usage.value.duration / 60)
-  const seconds = usage.value.duration % 60
+  const duration = usage.value?.duration ?? 0
+  const minutes = Math.floor(duration / 60)
+  const seconds = duration % 60
   if (minutes > 0) {
     return `${minutes}m ${seconds}s`
   }
@@ -51,7 +56,18 @@ const displayDuration = computed(() => {
 
 // Methods
 const updateUsage = () => {
-  usage.value = props.getDataUsage()
+  const newUsage = props.getDataUsage()
+  if (newUsage) {
+    usage.value = {
+      bytesReceived: newUsage.bytesReceived ?? 0,
+      bytesSent: newUsage.bytesSent ?? 0,
+      totalBytes: newUsage.totalBytes ?? 0,
+      totalKB: newUsage.totalKB ?? 0,
+      totalMB: newUsage.totalMB ?? 0,
+      duration: newUsage.duration ?? 0,
+      rateKbps: newUsage.rateKbps ?? 0
+    }
+  }
 }
 
 // Lifecycle

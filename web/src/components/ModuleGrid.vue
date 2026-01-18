@@ -50,7 +50,8 @@ const moduleStats = computed(() => {
        elapsed = ((Date.now() - start) / 1000).toFixed(1) + 's'
     } else if (latest && latest.duration && latest.duration > 0) {
        // Show duration of last transmission if idle
-       elapsed = latest.duration.toFixed(1) + 's'
+       const duration = latest.duration ?? 0
+       elapsed = duration.toFixed(1) + 's'
     }
     
     return {

@@ -73,8 +73,9 @@ const formatTime = (ts?: string) => {
 }
 
 const getDurationDisplay = (entry: any) => {
-  if (entry.status === 'ended' || entry.duration > 0) {
-    return `${entry.duration.toFixed(1)}s`
+  const duration = entry.duration ?? 0
+  if (entry.status === 'ended' || duration > 0) {
+    return `${duration.toFixed(1)}s`
   }
   if (live.isSessionActive(entry.id)) {
     const time = parseDate(entry.created_at)
