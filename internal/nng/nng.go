@@ -29,11 +29,12 @@ type Event struct {
 	Rpt2 string `json:"rpt2,omitempty"`
 
 	// State fields
-	ActiveTalkers []ActiveTalker `json:"ActiveTalkers,omitempty"`
-	Clients       []Client       `json:"Clients,omitempty"`
-	Users         []User         `json:"Users,omitempty"`
-	Peers         []Peer         `json:"Peers,omitempty"`
-	Modules       []Module       `json:"Modules,omitempty"`
+	ActiveTalkers []ActiveTalker         `json:"ActiveTalkers,omitempty"`
+	Clients       []Client               `json:"Clients,omitempty"`
+	Users         []User                 `json:"Users,omitempty"`
+	Peers         []Peer                 `json:"Peers,omitempty"`
+	Modules       []Module               `json:"Modules,omitempty"`
+	Configure     map[string]interface{} `json:"Configure,omitempty"`
 
 	Raw json.RawMessage `json:"-"`
 }

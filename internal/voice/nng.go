@@ -12,14 +12,35 @@ import (
 	_ "go.nanomsg.org/mangos/v3/transport/all"
 )
 
+// ByteSlice is a custom type that marshals to JSON as array instead of base64
+type ByteSlice []byte
+
+// MarshalJSON ensures the byte slice is marshaled as a JSON array, not base64
+func (b ByteSlice) MarshalJSON() ([]byte, error) {
+	if b == nil {
+		return []byte("null"), nil
+	}
+	// Marshal as array of integers
+	result := make([]byte, 0, len(b)*4+2)
+	result = append(result, '[')
+	for i, v := range b {
+		if i > 0 {
+			result = append(result, ',')
+		}
+		result = append(result, []byte(fmt.Sprintf("%d", v))...)
+	}
+	result = append(result, ']')
+	return result, nil
+}
+
 // VoiceMessage represents a message sent/received over NNG voice endpoint
 type VoiceMessage struct {
-	Type     string `json:"type"`               // "audio_data", "ptt_start", "ptt_stop", "state"
-	Module   string `json:"module,omitempty"`   // Module identifier (A, B, C, D)
-	Callsign string `json:"callsign,omitempty"` // User callsign
-	Source   string `json:"source,omitempty"`   // "web" for web clients
-	Opus     []byte `json:"opus,omitempty"`     // Opus encoded audio data
-	State    string `json:"state,omitempty"`    // "listening", "transmitting", "rx_busy"
+	Type     string    `json:"type"`               // "audio_data", "ptt_start", "ptt_stop", "state"
+	Module   string    `json:"module,omitempty"`   // Module identifier (A, B, C, D)
+	Callsign string    `json:"callsign,omitempty"` // User callsign
+	Source   string    `json:"source,omitempty"`   // "web" for web clients
+	Opus     ByteSlice `json:"opus,omitempty"`     // Opus encoded audio data (marshaled as array)
+	State    string    `json:"state,omitempty"`    // "listening", "transmitting", "rx_busy"
 }
 
 // VoiceClient manages NNG PAIR connection to reflector voice endpoint

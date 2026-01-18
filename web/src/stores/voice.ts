@@ -25,7 +25,7 @@ export const useVoiceStore = defineStore('voice', () => {
     return isEnabled.value && 
            callsign.value.length > 0 && 
            selectedModule.value !== null && 
-           state.value === 'listening'
+           (state.value === 'listening' || state.value === 'transmitting')
   })
 
   const session = computed<VoiceSession>(() => ({

@@ -50,15 +50,16 @@ type SessionConfig struct {
 
 // WSMessage represents a WebSocket message for voice control
 type WSMessage struct {
-	Type         string `json:"type"`
-	Module       string `json:"module,omitempty"`
-	Callsign     string `json:"callsign,omitempty"`
-	Password     string `json:"password,omitempty"`
-	Opus         string `json:"opus,omitempty"` // base64 encoded
-	State        string `json:"state,omitempty"`
-	From         string `json:"from,omitempty"`
-	Reason       string `json:"reason,omitempty"`
-	ActiveTalker string `json:"active_talker,omitempty"`
+	Type          string `json:"type"`
+	Module        string `json:"module,omitempty"`
+	Callsign      string `json:"callsign,omitempty"`
+	Password      string `json:"password,omitempty"`
+	Opus          string `json:"opus,omitempty"` // base64 encoded
+	State         string `json:"state,omitempty"`
+	From          string `json:"from,omitempty"`
+	Reason        string `json:"reason,omitempty"`
+	ActiveTalker  string `json:"active_talker,omitempty"`
+	MaxTxDuration int    `json:"max_tx_duration,omitempty"` // seconds
 }
 
 // NewSession creates a new voice session
@@ -165,7 +166,12 @@ func (s *Session) handleVoiceStart(msg WSMessage) error {
 
 	log.Printf("Session %s: %s started listening to module %s", s.ID, s.Callsign, s.Module)
 
-	return s.sendState(StateListening)
+	// Send config along with initial state
+	return s.sendMessage(WSMessage{
+		Type:          "voice_config",
+		State:         string(StateListening),
+		MaxTxDuration: int(s.Config.MaxTxDuration.Seconds()),
+	})
 }
 
 // handleVoiceStop stops the voice session

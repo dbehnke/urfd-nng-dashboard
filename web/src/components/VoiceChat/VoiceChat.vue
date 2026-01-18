@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useVoiceStore } from '@/stores/voice'
 import { useReflectorStore } from '@/stores/reflector'
 import VoiceEngine from './VoiceEngine.vue'
@@ -18,7 +18,9 @@ const voiceEngine = ref<InstanceType<typeof VoiceEngine> | null>(null)
 const callsignInput = ref('')
 const isTransmitting = ref(false)
 const showPasswordDialog = ref(false)
-const pendingPTT = ref(false)
+const pendingToggle = ref(false)
+const countdown = ref(0)
+let countdownInterval: number | null = null
 
 // Computed
 const websocketUrl = computed(() => {
@@ -55,6 +57,12 @@ const canConnect = computed(() => {
   return voiceStore.callsign.length >= 3 && voiceStore.selectedModule !== null
 })
 
+const countdownDisplay = computed(() => {
+  const minutes = Math.floor(countdown.value / 60)
+  const seconds = countdown.value % 60
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+})
+
 // Methods
 const handleCallsignSubmit = () => {
   if (voiceStore.setCallsign(callsignInput.value)) {
@@ -79,38 +87,90 @@ const handleModuleChange = (event: Event) => {
   }
 }
 
-const handlePTTDown = async () => {
-  if (!voiceStore.canTransmit) {
-    console.warn('Cannot transmit:', voiceStore.state)
-    return
-  }
+const handlePTTToggle = async () => {
+  console.log('[VoiceChat] Toggle clicked, isTransmitting:', isTransmitting.value)
   
-  // Check if we have a password stored
-  if (!voiceStore.password) {
-    // Need to prompt for password
-    pendingPTT.value = true
-    showPasswordDialog.value = true
-    return
-  }
-  
-  // Start PTT with stored password
-  const success = await voiceEngine.value?.startPTT(voiceStore.password)
-  if (success) {
-    isTransmitting.value = true
+  if (isTransmitting.value) {
+    // Currently transmitting, stop it
+    console.log('[VoiceChat] Stopping transmission...')
+    stopTransmitting()
+  } else {
+    // Not transmitting, start it
+    if (!voiceStore.canTransmit) {
+      console.warn('Cannot transmit:', voiceStore.state)
+      return
+    }
+    
+    // Check if we have a password stored
+    if (!voiceStore.password) {
+      // Need to prompt for password
+      pendingToggle.value = true
+      showPasswordDialog.value = true
+      return
+    }
+    
+    // Start transmitting with stored password
+    console.log('[VoiceChat] Starting transmission...')
+    await startTransmitting(voiceStore.password)
   }
 }
 
-const handlePTTUp = () => {
-  if (!isTransmitting.value) {
-    return
+const startTransmitting = async (password?: string) => {
+  const success = await voiceEngine.value?.startPTT(password)
+  if (success) {
+    isTransmitting.value = true
+    startCountdown()
   }
-  
+}
+
+const stopTransmitting = () => {
+  console.log('[VoiceChat] stopTransmitting called, isTransmitting:', isTransmitting.value)
   isTransmitting.value = false
   voiceEngine.value?.stopPTT()
+  stopCountdown()
+  console.log('[VoiceChat] stopTransmitting complete')
+}
+
+const startCountdown = () => {
+  // Get max duration from engine (in seconds)
+  const maxDuration = voiceEngine.value?.maxTransmitDuration || 180000
+  countdown.value = Math.floor(maxDuration / 1000)
+  
+  // Update countdown every second
+  countdownInterval = window.setInterval(() => {
+    countdown.value--
+    if (countdown.value <= 0) {
+      stopCountdown()
+    }
+  }, 1000)
+}
+
+const stopCountdown = () => {
+  if (countdownInterval) {
+    clearInterval(countdownInterval)
+    countdownInterval = null
+  }
+  countdown.value = 0
 }
 
 const handleStateChange = (newState: 'listening' | 'transmitting' | 'rx_busy' | 'disconnected') => {
+  console.log('[VoiceChat] State change:', newState, 'current isTransmitting:', isTransmitting.value)
   voiceStore.setState(newState)
+  
+  // Sync local isTransmitting state with engine state
+  if (newState === 'transmitting') {
+    isTransmitting.value = true
+    if (!countdownInterval) {
+      startCountdown()
+    }
+  } else {
+    // Stop transmitting if we're currently transmitting
+    if (isTransmitting.value) {
+      console.log('[VoiceChat] Engine state changed to non-transmitting, stopping...')
+      isTransmitting.value = false
+      stopCountdown()
+    }
+  }
 }
 
 const handleError = (message: string) => {
@@ -123,19 +183,16 @@ const handlePasswordSubmit = async (password: string) => {
   voiceStore.setPassword(password)
   showPasswordDialog.value = false
   
-  // If PTT was pending, start it now
-  if (pendingPTT.value && voiceEngine.value) {
-    pendingPTT.value = false
-    const success = await voiceEngine.value.startPTT(password)
-    if (success) {
-      isTransmitting.value = true
-    }
+  // If toggle was pending, start transmitting now
+  if (pendingToggle.value && voiceEngine.value) {
+    pendingToggle.value = false
+    await startTransmitting(password)
   }
 }
 
 const handlePasswordCancel = () => {
   showPasswordDialog.value = false
-  pendingPTT.value = false
+  pendingToggle.value = false
 }
 
 // Lifecycle
@@ -143,16 +200,29 @@ onMounted(() => {
   // Load saved callsign/module from storage
   voiceStore.loadFromStorage()
   callsignInput.value = voiceStore.callsign
-  
-  // Check if voice is enabled via reflector config
-  const config = reflectorStore.config || {}
-  const voiceEnabled = config.VoiceEnable === true
-  voiceStore.setEnabled(voiceEnabled)
-  
-  if (!voiceEnabled) {
-    voiceStore.setError('Voice chat not enabled on reflector')
-  }
 })
+
+onUnmounted(() => {
+  // Clean up countdown interval
+  stopCountdown()
+})
+
+// Watch for reflector config changes to update voice enabled status
+watch(() => reflectorStore.config, (config) => {
+  if (config && config.VoiceEnable !== undefined) {
+    const voiceEnabled = config.VoiceEnable === true
+    voiceStore.setEnabled(voiceEnabled)
+    
+    if (!voiceEnabled) {
+      voiceStore.setError('Voice chat not enabled on reflector')
+    } else {
+      // Clear the error if voice becomes enabled
+      if (voiceStore.lastError === 'Voice chat not enabled on reflector') {
+        voiceStore.setError(null)
+      }
+    }
+  }
+}, { deep: true, immediate: true })
 
 // Watch for callsign/module changes to auto-connect
 watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) => {
@@ -182,29 +252,27 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
     </div>
 
     <!-- Callsign Input -->
-    <div class="flex flex-col gap-1">
+    <div class="flex flex-col gap-2">
       <label for="callsign" class="text-sm font-medium text-gray-700 dark:text-gray-300">
         Your Callsign
       </label>
-      <div class="flex gap-2">
-        <input
-          id="callsign"
-          v-model="callsignInput"
-          type="text"
-          placeholder="KC1XXX"
-          maxlength="10"
-          class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          @keyup.enter="handleCallsignSubmit"
-          :disabled="!voiceStore.isEnabled"
-        />
-        <button
-          @click="handleCallsignSubmit"
-          :disabled="!voiceStore.isEnabled || callsignInput.length < 3"
-          class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-md transition-colors"
-        >
-          Set
-        </button>
-      </div>
+      <input
+        id="callsign"
+        v-model="callsignInput"
+        type="text"
+        placeholder="KC1XXX"
+        maxlength="10"
+        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        @keyup.enter="handleCallsignSubmit"
+        :disabled="!voiceStore.isEnabled"
+      />
+      <button
+        @click="handleCallsignSubmit"
+        :disabled="!voiceStore.isEnabled || callsignInput.length < 3"
+        class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:dark:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors shadow-sm"
+      >
+        Set Callsign
+      </button>
     </div>
 
     <!-- Module Selector -->
@@ -251,20 +319,22 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
       }" />
     </div>
 
+    <!-- Countdown Timer (when transmitting) -->
+    <div v-if="isTransmitting && countdown > 0" class="flex items-center justify-center gap-2 py-2 px-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
+      <span class="text-2xl font-mono font-bold text-red-600 dark:text-red-400">
+        {{ countdownDisplay }}
+      </span>
+      <span class="text-xs text-red-600 dark:text-red-400">remaining</span>
+    </div>
+
     <!-- PTT Button -->
     <div class="flex justify-center pt-2">
       <PTTButton
         :disabled="!voiceStore.canTransmit"
         :transmitting="isTransmitting"
-        @ptt-down="handlePTTDown"
-        @ptt-up="handlePTTUp"
+        @toggle="handlePTTToggle"
       />
     </div>
-
-    <!-- Help Text -->
-    <p class="text-xs text-gray-500 dark:text-gray-400 text-center">
-      Click and hold or press Space to transmit
-    </p>
 
     <!-- Voice Engine (headless) -->
     <VoiceEngine

@@ -20,6 +20,7 @@ const ws = ref<WebSocket | null>(null)
 const audioContext = ref<AudioContext | null>(null)
 const opusDecoder = ref<any>(null)
 const opusEncoder = ref<any>(null)
+let opusDecoderReady = false
 const mediaStream = ref<MediaStream | null>(null)
 const micPermissionGranted = ref(false)
 const micPermissionDenied = ref(false)
@@ -42,7 +43,7 @@ let reconnectTimeout: number | null = null
 const shouldReconnect = ref(true)
 
 // Session timeout enforcement
-const maxTransmitDuration = 120000 // 120 seconds in milliseconds
+const maxTransmitDuration = ref(180000) // Default 180 seconds in milliseconds
 let transmitStartTime: number | null = null
 let transmitTimeoutHandle: number | null = null
 
@@ -277,8 +278,14 @@ const initAudio = async () => {
     rxAnalyser.value.smoothingTimeConstant = 0.8
     
     // Initialize Opus decoder (dynamically import)
-    const OpusModule = await import('libopus.js')
-    opusDecoder.value = await OpusModule.default()
+    const { OpusDecoder } = await import('opus-decoder')
+    opusDecoder.value = new OpusDecoder({
+      sampleRate: 8000,
+      channels: 1
+    })
+    // Wait for WASM to be ready
+    await opusDecoder.value.ready
+    opusDecoderReady = true
     
     // Start audio level monitoring
     startLevelMonitoring()
@@ -351,6 +358,76 @@ const requestMicPermission = async (): Promise<boolean> => {
   }
 }
 
+// Extract raw Opus packets from Ogg container
+// Ogg page parser - uses segment table to split packets correctly
+const extractOpusFromOgg = (oggData: Uint8Array): Uint8Array[] => {
+  const packets: Uint8Array[] = []
+  let offset = 0
+  
+  while (offset < oggData.length) {
+    // Check for "OggS" magic number
+    if (offset + 27 > oggData.length) break
+    if (oggData[offset] !== 0x4F || oggData[offset + 1] !== 0x67 || 
+        oggData[offset + 2] !== 0x67 || oggData[offset + 3] !== 0x53) {
+      console.warn('[VoiceEngine] Invalid Ogg page at offset', offset)
+      break
+    }
+    
+    // Read number of page segments (at offset 26)
+    const numSegments = oggData[offset + 26]
+    if (!numSegments || offset + 27 + numSegments > oggData.length) break
+    
+    // Read segment table - each segment describes packet boundaries
+    // Segments of 255 bytes mean "packet continues"
+    // Segment < 255 means "end of packet"
+    const segmentTable = []
+    for (let i = 0; i < numSegments; i++) {
+      const segmentSize = oggData[offset + 27 + i]
+      if (segmentSize === undefined) break
+      segmentTable.push(segmentSize)
+    }
+    
+    // Extract the payload (skip header + segment table)
+    const payloadStart = offset + 27 + numSegments
+    const totalPayloadSize = segmentTable.reduce((sum, size) => sum + size, 0)
+    if (payloadStart + totalPayloadSize > oggData.length) break
+    
+    // Use segment table to split payload into individual packets
+    let payloadOffset = payloadStart
+    let currentPacket: number[] = []
+    
+    for (const segmentSize of segmentTable) {
+      // Add this segment to current packet
+      const segment = oggData.slice(payloadOffset, payloadOffset + segmentSize)
+      currentPacket.push(...segment)
+      payloadOffset += segmentSize
+      
+      // If segment is < 255, packet is complete
+      if (segmentSize < 255) {
+        const packetData = new Uint8Array(currentPacket)
+        
+        // Skip OpusHead and OpusTags pages
+        if (packetData.length > 8) {
+          const header = String.fromCharCode(...Array.from(packetData.slice(0, 8)))
+          if (!header.startsWith('OpusHead') && !header.startsWith('OpusTags')) {
+            // This is actual audio data
+            packets.push(packetData)
+          }
+        }
+        
+        // Start new packet
+        currentPacket = []
+      }
+      // If segment is exactly 255, packet continues to next segment
+    }
+    
+    // Move to next page
+    offset = payloadStart + totalPayloadSize
+  }
+  
+  return packets
+}
+
 // Initialize Opus encoder for transmit
 const initOpusEncoder = async () => {
   try {
@@ -373,11 +450,12 @@ const initOpusEncoder = async () => {
     }
 
     // Create Opus recorder
+    // Using streamPages: true (Ogg format) then extracting raw Opus packets
     opusEncoder.value = new Recorder({
       encoderPath: '/opus-recorder/encoderWorker.min.js',
       encoderSampleRate: 8000,
-      encoderApplication: 2048, // VOIP application
-      streamPages: true,
+      encoderApplication: 2048, // VOIP application  
+      streamPages: true, // Use Ogg container, we'll extract Opus packets
       numberOfChannels: 1,
       encoderComplexity: 10,
       encoderBitRate: 12000, // 12kbps as per spec
@@ -385,9 +463,15 @@ const initOpusEncoder = async () => {
       sourceNode: mediaStream.value
     })
 
-    // Handle encoded data
+    // Handle encoded data - extract raw Opus packets from Ogg pages
     opusEncoder.value.ondataavailable = (typedArray: Uint8Array) => {
-      sendAudioData(typedArray)
+      console.log('[VoiceEngine] Ogg page received, size:', typedArray.length, 'bytes')
+      // Extract Opus packets from Ogg container
+      const opusPackets = extractOpusFromOgg(typedArray)
+      for (const packet of opusPackets) {
+        console.log('[VoiceEngine] Extracted Opus packet, size:', packet.length, 'bytes')
+        sendAudioData(packet)
+      }
     }
 
     console.log('Opus encoder initialized')
@@ -522,6 +606,18 @@ const connect = async () => {
         const data = JSON.parse(event.data)
         
         switch (data.type) {
+          case 'voice_config':
+            // Receive and store config from server
+            if (data.max_tx_duration) {
+              maxTransmitDuration.value = data.max_tx_duration * 1000 // Convert seconds to ms
+              console.log('Received voice config: max_tx_duration =', data.max_tx_duration, 'seconds')
+            }
+            // Also handle state if included
+            if (data.state) {
+              currentState.value = data.state
+              emit('stateChange', data.state)
+            }
+            break
           case 'audio_data':
             isReceivingAudio.value = true
             
@@ -662,14 +758,20 @@ const handleAudioData = async (data: { opus: string, from: string }) => {
 
 // Decode Opus data to PCM
 const decodeOpus = async (opusData: Uint8Array): Promise<Float32Array | null> => {
-  if (!opusDecoder.value) return null
+  if (!opusDecoder.value || !opusDecoderReady) return null
   
   try {
-    // This is a placeholder - actual implementation depends on libopus.js API
-    // The decoder should be configured for 8kHz mono, 20ms frames (160 samples)
-    // libopus.js API may vary, this needs to be adjusted based on actual API
-    const decoded = opusDecoder.value.decode(opusData, 160, false)
-    return new Float32Array(decoded)
+    // Use the new opus-decoder API
+    // The decoder is configured for 8kHz mono in initAudio()
+    const { channelData } = opusDecoder.value.decodeFrame(opusData)
+    
+    // channelData is an array of Float32Arrays (one per channel)
+    // Since we're using mono (1 channel), we return the first channel
+    if (channelData && channelData.length > 0) {
+      return channelData[0]
+    }
+    
+    return null
   } catch (error) {
     console.error('Opus decode error:', error)
     return null
@@ -760,10 +862,10 @@ const startPTT = async (password?: string): Promise<boolean> => {
     transmitStartTime = Date.now()
     transmitTimeoutHandle = window.setTimeout(() => {
       console.warn('Max transmit duration reached, stopping PTT')
-      emit('error', `Maximum transmit duration (${maxTransmitDuration / 1000}s) reached`)
-      logDiagnostic('ptt_timeout', { duration: maxTransmitDuration })
+      emit('error', `Maximum transmit duration (${maxTransmitDuration.value / 1000}s) reached`)
+      logDiagnostic('ptt_timeout', { duration: maxTransmitDuration.value })
       stopPTT()
-    }, maxTransmitDuration)
+    }, maxTransmitDuration.value)
     
     currentState.value = 'transmitting'
     logDiagnostic('ptt_started', { 
@@ -783,7 +885,12 @@ const startPTT = async (password?: string): Promise<boolean> => {
 
 // Stop PTT
 const stopPTT = () => {
-  if (!opusEncoder.value) return
+  console.log('[VoiceEngine] stopPTT called, opusEncoder exists:', !!opusEncoder.value)
+  
+  if (!opusEncoder.value) {
+    console.log('[VoiceEngine] No encoder, returning early')
+    return
+  }
 
   // Clear transmit timeout
   if (transmitTimeoutHandle) {
@@ -801,6 +908,7 @@ const stopPTT = () => {
 
   try {
     // Stop recording
+    console.log('[VoiceEngine] Stopping encoder...')
     opusEncoder.value.stop()
     
     // Send PTT release message
@@ -809,9 +917,13 @@ const stopPTT = () => {
       module: props.module,
       callsign: props.callsign
     }
+    console.log('[VoiceEngine] Sending ptt_release message')
     ws.value?.send(JSON.stringify(pttMsg))
     
     currentState.value = 'listening'
+    console.log('[VoiceEngine] Emitting stateChange: listening')
+    emit('stateChange', 'listening')
+    
     logDiagnostic('ptt_stopped', { 
       duration,
       module: props.module,
@@ -827,7 +939,7 @@ const stopPTT = () => {
 // Send encoded audio data to server
 const sendAudioData = (opusData: Uint8Array) => {
   if (!ws.value || ws.value.readyState !== WebSocket.OPEN) {
-    console.warn('WebSocket not open, cannot send audio')
+    console.warn('[VoiceEngine] WebSocket not open, cannot send audio')
     return
   }
 
@@ -842,6 +954,7 @@ const sendAudioData = (opusData: Uint8Array) => {
       opus: base64
     }
     
+    console.log('[VoiceEngine] Sending audio_data packet, base64 length:', base64.length)
     ws.value.send(JSON.stringify(audioMsg))
     
     // Track sent bytes
@@ -938,7 +1051,9 @@ defineExpose({
   resetDataUsage,
   bytesReceived,
   bytesSent,
-  resumeAudioContext
+  resumeAudioContext,
+  maxTransmitDuration,
+  transmitStartTime: () => transmitStartTime
 })
 </script>
 

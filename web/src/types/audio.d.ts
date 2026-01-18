@@ -1,6 +1,5 @@
-declare module 'libopus.js' {
-  export default function (): Promise<any>
-}
+// Type definitions are now provided by the opus-decoder package itself
+// The opus-decoder package includes its own types.d.ts file
 
 declare module 'opus-recorder' {
   export interface RecorderConfig {

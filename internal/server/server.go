@@ -118,7 +118,7 @@ func (s *Server) handleVoiceWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		// Clear active transmitter if this session was transmitting
 		if session.IsTransmitting() {
-			s.Hub.ClearActiveTransmitter(session.GetModule())
+			s.Hub.ClearActiveTransmitter(session.GetModule(), sessionID)
 		}
 	}()
 
@@ -138,12 +138,12 @@ func (s *Server) handleVoiceWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		// Update active transmitter tracking
 		if session.IsTransmitting() {
-			s.Hub.SetActiveTransmitter(session.GetModule(), session.GetCallsign())
+			s.Hub.SetActiveTransmitter(session.GetModule(), session.GetCallsign(), sessionID)
 		} else if session.GetState() == voice.StateListening {
 			// If we just stopped transmitting, clear the active transmitter
 			activeCallsign, exists := s.Hub.GetActiveTransmitter(session.GetModule())
 			if exists && activeCallsign == session.GetCallsign() {
-				s.Hub.ClearActiveTransmitter(session.GetModule())
+				s.Hub.ClearActiveTransmitter(session.GetModule(), sessionID)
 			}
 		}
 	}

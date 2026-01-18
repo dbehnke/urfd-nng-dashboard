@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { Mic, MicOff } from 'lucide-vue-next'
 
 // Props
@@ -10,12 +10,8 @@ const props = defineProps<{
 
 // Emits
 const emit = defineEmits<{
-  pttDown: []
-  pttUp: []
+  toggle: []
 }>()
-
-// State
-const isPressed = ref(false)
 
 // Computed
 const buttonClass = computed(() => {
@@ -25,7 +21,7 @@ const buttonClass = computed(() => {
     return `${baseClass} bg-gray-300 cursor-not-allowed`
   }
   
-  if (isPressed.value || props.transmitting) {
+  if (props.transmitting) {
     return `${baseClass} bg-red-600 hover:bg-red-700 text-white shadow-lg scale-95 focus:ring-red-500`
   }
   
@@ -33,41 +29,17 @@ const buttonClass = computed(() => {
 })
 
 // Handlers
-const handleMouseDown = () => {
+const handleClick = () => {
   if (props.disabled) return
-  isPressed.value = true
-  emit('pttDown')
+  emit('toggle')
 }
 
-const handleMouseUp = () => {
-  if (props.disabled) return
-  isPressed.value = false
-  emit('pttUp')
-}
-
-const handleMouseLeave = () => {
-  // Release PTT if mouse leaves button while pressed
-  if (isPressed.value) {
-    handleMouseUp()
-  }
-}
-
-// Keyboard support
+// Keyboard support (Space to toggle)
 const handleKeyDown = (event: KeyboardEvent) => {
   if (props.disabled) return
-  if (event.code === 'Space' && !isPressed.value) {
+  if (event.code === 'Space') {
     event.preventDefault()
-    isPressed.value = true
-    emit('pttDown')
-  }
-}
-
-const handleKeyUp = (event: KeyboardEvent) => {
-  if (props.disabled) return
-  if (event.code === 'Space' && isPressed.value) {
-    event.preventDefault()
-    isPressed.value = false
-    emit('pttUp')
+    emit('toggle')
   }
 }
 </script>
@@ -76,16 +48,11 @@ const handleKeyUp = (event: KeyboardEvent) => {
   <button
     :class="buttonClass"
     :disabled="disabled"
-    @mousedown="handleMouseDown"
-    @mouseup="handleMouseUp"
-    @mouseleave="handleMouseLeave"
-    @touchstart.prevent="handleMouseDown"
-    @touchend.prevent="handleMouseUp"
+    @click="handleClick"
     @keydown="handleKeyDown"
-    @keyup="handleKeyUp"
-    aria-label="Push to talk"
+    aria-label="Toggle transmit"
   >
-    <Mic v-if="!isPressed && !transmitting" :size="28" />
+    <Mic v-if="!transmitting" :size="28" />
     <MicOff v-else :size="28" />
   </button>
 </template>

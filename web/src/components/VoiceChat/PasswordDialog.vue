@@ -49,12 +49,13 @@ const handleKeydown = (event: KeyboardEvent) => {
 </script>
 
 <template>
-  <Transition name="dialog">
-    <div
-      v-if="show"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-      @click.self="handleCancel"
-    >
+  <Teleport to="body">
+    <Transition name="dialog">
+      <div
+        v-if="show"
+        class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+        @click.self="handleCancel"
+      >
       <div
         class="relative w-full max-w-md mx-4 bg-white dark:bg-gray-800 rounded-lg shadow-xl"
         @keydown="handleKeydown"
@@ -120,8 +121,9 @@ const handleKeydown = (event: KeyboardEvent) => {
           </button>
         </div>
       </div>
-    </div>
-  </Transition>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>

@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"hash/fnv"
 	"log"
 	"net/http"
 	"sync"
@@ -102,6 +103,13 @@ func (c *Client) WritePump() {
 
 // Voice session management methods
 
+// hashSessionID converts a session ID string to a numeric ID
+func hashSessionID(sessionID string) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(sessionID))
+	return h.Sum32()
+}
+
 // HasActiveTransmitter checks if a module has an active transmitter
 func (h *Hub) HasActiveTransmitter(module string) bool {
 	h.mu.RLock()
@@ -119,17 +127,42 @@ func (h *Hub) GetActiveTransmitter(module string) (string, bool) {
 }
 
 // SetActiveTransmitter sets the active transmitter for a module
-func (h *Hub) SetActiveTransmitter(module, callsign string) {
+func (h *Hub) SetActiveTransmitter(module, callsign, sessionID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.activeTransmitters[module] = callsign
-	log.Printf("Active transmitter on module %s: %s", module, callsign)
+	log.Printf("Active transmitter on module %s: %s (session %s)", module, callsign, sessionID)
+
+	// Broadcast hearing event to dashboard clients
+	// Convert session ID to numeric hash for frontend compatibility
+	numericID := hashSessionID(sessionID)
+	h.BroadcastJSON(map[string]interface{}{
+		"type":       "hearing",
+		"id":         numericID,
+		"my":         callsign,
+		"ur":         "CQCQCQ",
+		"rpt1":       "",
+		"rpt2":       "",
+		"module":     module,
+		"protocol":   "WEB",
+		"status":     "active",
+		"created_at": nil, // Frontend will use current time
+	})
 }
 
 // ClearActiveTransmitter removes the active transmitter for a module
-func (h *Hub) ClearActiveTransmitter(module string) {
+func (h *Hub) ClearActiveTransmitter(module, sessionID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.activeTransmitters, module)
-	log.Printf("Cleared active transmitter on module %s", module)
+	log.Printf("Cleared active transmitter on module %s (session %s)", module, sessionID)
+
+	// Broadcast closing event to dashboard clients
+	numericID := hashSessionID(sessionID)
+	h.BroadcastJSON(map[string]interface{}{
+		"type":   "closing",
+		"id":     numericID,
+		"module": module,
+		"status": "ended",
+	})
 }
