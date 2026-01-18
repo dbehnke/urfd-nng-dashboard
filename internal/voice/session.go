@@ -131,6 +131,13 @@ func (s *Session) Stop() error {
 		sharedClient.SendPTTStop(module, callsign)
 	}
 
+	// Send voice_session_stop to urfd (if we have an active session)
+	if sharedClient != nil && callsign != "" {
+		if err := sharedClient.SendSessionStop(callsign); err != nil {
+			log.Printf("Session %s: Warning: Failed to send voice_session_stop to urfd: %v", s.ID, err)
+		}
+	}
+
 	// Unregister from shared client
 	if sharedClient != nil {
 		sharedClient.UnregisterSession(s.ID)
@@ -200,6 +207,12 @@ func (s *Session) handleVoiceStart(msg WSMessage) error {
 	// Register this session with the shared client
 	sharedClient.RegisterSession(s)
 
+	// Send voice_session_start to urfd (don't fail if urfd is down)
+	if err := sharedClient.SendSessionStart(s.Module, s.Callsign); err != nil {
+		log.Printf("Session %s: Warning: Failed to send voice_session_start to urfd: %v", s.ID, err)
+		// Don't return error - peer audio will still work
+	}
+
 	log.Printf("Session %s: %s started listening to module %s", s.ID, s.Callsign, s.Module)
 
 	// Send config along with initial state
@@ -218,6 +231,13 @@ func (s *Session) handleVoiceStop() error {
 	if s.State == StateTransmitting && s.SharedClient != nil {
 		s.SharedClient.SendPTTStop(s.Module, s.Callsign)
 		s.activeTransmit = false
+	}
+
+	// Send voice_session_stop to urfd (don't fail if urfd is down)
+	if s.SharedClient != nil && s.Callsign != "" {
+		if err := s.SharedClient.SendSessionStop(s.Callsign); err != nil {
+			log.Printf("Session %s: Warning: Failed to send voice_session_stop to urfd: %v", s.ID, err)
+		}
 	}
 
 	s.State = StateIdle

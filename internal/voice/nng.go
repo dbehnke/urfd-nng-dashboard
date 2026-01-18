@@ -163,6 +163,24 @@ func (c *VoiceClient) SendPTTStop(module, callsign string) error {
 	})
 }
 
+// SendSessionStart notifies reflector that a voice session has started
+func (c *VoiceClient) SendSessionStart(module, callsign string) error {
+	return c.Send(VoiceMessage{
+		Type:     "voice_session_start",
+		Module:   module,
+		Callsign: callsign,
+		Source:   "web",
+	})
+}
+
+// SendSessionStop notifies reflector that a voice session has ended
+func (c *VoiceClient) SendSessionStop(callsign string) error {
+	return c.Send(VoiceMessage{
+		Type:     "voice_session_stop",
+		Callsign: callsign,
+	})
+}
+
 // OnMessage registers a handler for a specific message type
 func (c *VoiceClient) OnMessage(msgType string, handler func(VoiceMessage)) {
 	c.mu.Lock()

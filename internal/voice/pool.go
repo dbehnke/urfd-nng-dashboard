@@ -263,6 +263,38 @@ func (s *SharedVoiceClient) SendAudioData(module, callsign string, opusData []by
 	return s.client.SendAudioData(module, callsign, opusData)
 }
 
+// SendSessionStart forwards session start to reflector
+func (s *SharedVoiceClient) SendSessionStart(module, callsign string) error {
+	return s.client.SendSessionStart(module, callsign)
+}
+
+// SendSessionStop forwards session stop to reflector
+func (s *SharedVoiceClient) SendSessionStop(callsign string) error {
+	return s.client.SendSessionStop(callsign)
+}
+
+// OnUrfdReconnect resyncs all active sessions after urfd reconnects
+func (s *SharedVoiceClient) OnUrfdReconnect() error {
+	s.sessionsMu.RLock()
+	defer s.sessionsMu.RUnlock()
+
+	log.Printf("urfd reconnected, resyncing %d active sessions", len(s.sessions))
+
+	for _, session := range s.sessions {
+		msg := VoiceMessage{
+			Type:     "voice_session_start",
+			Module:   session.Module,
+			Callsign: session.Callsign,
+			Source:   "web",
+		}
+		if err := s.client.Send(msg); err != nil {
+			log.Printf("Warning: Failed to resync session %s: %v", session.Callsign, err)
+		}
+	}
+
+	return nil
+}
+
 // RequestPTT attempts to acquire PTT for a session
 // Returns error if PTT is already held by another callsign
 func (s *SharedVoiceClient) RequestPTT(sessionID, callsign string) error {
