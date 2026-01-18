@@ -191,10 +191,23 @@ func main() {
 						updates := map[string]interface{}{"duration": duration}
 						if ev.Recording != "" {
 							updates["audio_file"] = ev.Recording
+							logger.Log.Info("Closing event with audio file",
+								zap.String("callsign", ev.My),
+								zap.String("module", ev.Module),
+								zap.String("audio_file", ev.Recording))
+						} else {
+							logger.Log.Warn("Closing event WITHOUT audio file",
+								zap.String("callsign", ev.My),
+								zap.String("module", ev.Module))
 						}
 
 						if err := s.DB.Model(&store.Hearing{}).Where("id = ?", sess.ID).Updates(updates).Error; err != nil {
 							logger.Log.Error("Failed to update session", zap.Error(err))
+						} else {
+							logger.Log.Info("Successfully updated session with duration",
+								zap.Uint("id", sess.ID),
+								zap.Float64("duration", duration),
+								zap.String("audio_file", ev.Recording))
 						}
 						ev.ID = sess.ID
 						ev.Status = "ended"
@@ -218,6 +231,13 @@ func main() {
 							}
 						}
 						logger.Log.Info("Session closed via closing event", zap.Uint("id", sess.ID))
+					} else if ev.Type == "closing" && !exists {
+						// Closing event received but no session in memory - this shouldn't happen
+						// if recovery is working correctly
+						logger.Log.Warn("Closing event for unknown session",
+							zap.String("callsign", ev.My),
+							zap.String("module", ev.Module),
+							zap.String("recording", ev.Recording))
 					}
 					sessMu.Unlock()
 				}
@@ -305,29 +325,55 @@ func main() {
 							}
 						}
 						if !found {
-							h := store.Hearing{
-								My:        call,
-								Module:    talker.Module,
-								Protocol:  talker.Protocol,
-								Ur:        "CQCQCQ",
-								Rpt1:      "SIMULATOR",
-								Rpt2:      "URFD " + talker.Module,
-								CreatedAt: now,
+							// Check if there's a recent active hearing record in DB (e.g., VOICE session)
+							// to avoid creating duplicates. Active sessions have duration <= 0 or are very recent.
+							var existingHearing store.Hearing
+							err := s.DB.Where("my = ? AND module = ? AND (duration = 0 OR duration IS NULL)", call, talker.Module).
+								Order("id DESC").
+								First(&existingHearing).Error
+
+							if err == nil {
+								// Found existing active session in DB, add it to sessions map
+								sessions[call+":"+talker.Module] = &ActiveSession{
+									ID:        existingHearing.ID,
+									Callsign:  existingHearing.My,
+									Module:    existingHearing.Module,
+									Protocol:  existingHearing.Protocol,
+									Ur:        existingHearing.Ur,
+									Rpt2:      existingHearing.Rpt2,
+									StartTime: existingHearing.CreatedAt,
+									LastSeen:  now,
+								}
+								logger.Log.Info("Found existing session in DB",
+									zap.String("callsign", call),
+									zap.Uint("id", existingHearing.ID),
+									zap.String("protocol", existingHearing.Protocol))
+							} else {
+								// No existing session, create recovery entry
+								h := store.Hearing{
+									My:        call,
+									Module:    talker.Module,
+									Protocol:  talker.Protocol,
+									Ur:        "CQCQCQ",
+									Rpt1:      "SIMULATOR",
+									Rpt2:      "URFD " + talker.Module,
+									CreatedAt: now,
+								}
+								if err := s.DB.Create(&h).Error; err != nil {
+									logger.Log.Error("Recovery failed", zap.Error(err))
+								}
+								sessions[call+":"+talker.Module] = &ActiveSession{
+									ID:        h.ID,
+									Callsign:  h.My,
+									Module:    h.Module,
+									Protocol:  h.Protocol,
+									Ur:        h.Ur,
+									Rpt2:      h.Rpt2,
+									StartTime: h.CreatedAt,
+									LastSeen:  now,
+								}
+								logger.Log.Info("Recovered session from State", zap.String("callsign", call))
 							}
-							if err := s.DB.Create(&h).Error; err != nil {
-								logger.Log.Error("Recovery failed", zap.Error(err))
-							}
-							sessions[call+":"+talker.Module] = &ActiveSession{
-								ID:        h.ID,
-								Callsign:  h.My,
-								Module:    h.Module,
-								Protocol:  h.Protocol,
-								Ur:        h.Ur,
-								Rpt2:      h.Rpt2,
-								StartTime: h.CreatedAt,
-								LastSeen:  now,
-							}
-							logger.Log.Info("Recovered session from State", zap.String("callsign", call))
 						}
 					}
 					sessMu.Unlock()
@@ -342,6 +388,7 @@ func main() {
 
 	// 7. Start HTTP Server
 	srv := server.NewServer(hub, assets.GetAssets())
+	srv.DB = s.DB
 
 	// Configure voice if enabled
 	if cfg.Voice.Enable {
@@ -352,6 +399,8 @@ func main() {
 			OpusBitrate:      cfg.Voice.OpusBitrate,
 			ReflectorAddr:    cfg.Voice.ReflectorAddr,
 		}
+		// Initialize voice client pool
+		srv.VoiceClientPool = voice.NewVoiceClientPool(cfg.Voice.ReflectorAddr)
 		logger.Log.Info("Voice chat enabled", zap.String("reflector_addr", cfg.Voice.ReflectorAddr))
 	}
 

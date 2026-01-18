@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"gorm.io/gorm"
 )
 
 // SessionState represents the current state of a voice session
@@ -22,6 +23,32 @@ const (
 	StateRxBusy       SessionState = "rx_busy"
 )
 
+// Broadcaster defines the interface for broadcasting events
+type Broadcaster interface {
+	BroadcastJSON(v interface{})
+}
+
+// Hearing represents a voice activity event (matches store.Hearing)
+type Hearing struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+
+	My       string `json:"my" gorm:"index"`
+	Ur       string `json:"ur"`
+	Rpt1     string `json:"rpt1"`
+	Rpt2     string `json:"rpt2"`
+	Module   string `json:"module" gorm:"index"`
+	Protocol string `json:"protocol"`
+
+	Duration  float64 `json:"duration"`
+	AudioFile string  `json:"audio_file,omitempty"`
+}
+
+// TableName sets the table name for GORM
+func (Hearing) TableName() string {
+	return "hearings"
+}
+
 // Session represents a single client's voice session
 type Session struct {
 	ID            string
@@ -30,13 +57,17 @@ type Session struct {
 	State         SessionState
 	Authenticated bool
 	Conn          *websocket.Conn
-	VoiceClient   *VoiceClient
+	SharedClient  *SharedVoiceClient // Changed from VoiceClient to SharedVoiceClient
+	ClientPool    *VoiceClientPool   // Reference to the pool
 	Config        *SessionConfig
+	DB            *gorm.DB
+	Hub           Broadcaster
 
 	mu             sync.RWMutex
 	lastActivity   time.Time
 	txStartTime    time.Time
 	activeTransmit bool
+	hearingID      uint // Database ID for current transmission
 }
 
 // SessionConfig holds configuration for voice sessions
@@ -62,64 +93,59 @@ type WSMessage struct {
 	MaxTxDuration int    `json:"max_tx_duration,omitempty"` // seconds
 }
 
-// NewSession creates a new voice session
-func NewSession(id string, conn *websocket.Conn, config *SessionConfig) (*Session, error) {
-	// Create NNG voice client
-	voiceClient, err := NewVoiceClient(config.ReflectorAddr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create voice client: %w", err)
-	}
-
+// NewSession creates a new voice session using the shared client pool
+func NewSession(id string, conn *websocket.Conn, config *SessionConfig, db *gorm.DB, hub Broadcaster, pool *VoiceClientPool) (*Session, error) {
 	session := &Session{
 		ID:           id,
 		State:        StateIdle,
 		Conn:         conn,
-		VoiceClient:  voiceClient,
+		ClientPool:   pool,
 		Config:       config,
+		DB:           db,
+		Hub:          hub,
 		lastActivity: time.Now(),
 	}
-
-	// Register handlers for incoming voice messages from reflector
-	voiceClient.OnMessage("audio_data", session.handleAudioFromReflector)
-	voiceClient.OnMessage("state", session.handleStateChange)
 
 	return session, nil
 }
 
 // Start begins the voice session
 func (s *Session) Start() error {
-	// Connect to reflector voice endpoint
-	if err := s.VoiceClient.Connect(); err != nil {
-		return fmt.Errorf("failed to connect to reflector: %w", err)
-	}
-
-	// Start listening for messages from reflector
-	go func() {
-		if err := s.VoiceClient.Listen(); err != nil {
-			log.Printf("Session %s: Voice client listen error: %v", s.ID, err)
-		}
-	}()
-
-	log.Printf("Session %s: Started", s.ID)
+	// Session doesn't connect immediately - waits for voice_start message
+	// to know which module to join
+	log.Printf("Session %s: Started (waiting for voice_start)", s.ID)
 	return nil
 }
 
 // Stop ends the voice session and cleans up resources
 func (s *Session) Stop() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	module := s.Module
+	callsign := s.Callsign
+	state := s.State
+	sharedClient := s.SharedClient
+	s.mu.Unlock()
 
 	// If transmitting, send PTT stop
-	if s.State == StateTransmitting {
-		s.VoiceClient.SendPTTStop(s.Module, s.Callsign)
+	if state == StateTransmitting && sharedClient != nil {
+		sharedClient.SendPTTStop(module, callsign)
 	}
 
-	// Disconnect from reflector
-	if err := s.VoiceClient.Disconnect(); err != nil {
-		log.Printf("Session %s: Failed to disconnect voice client: %v", s.ID, err)
+	// Unregister from shared client
+	if sharedClient != nil {
+		sharedClient.UnregisterSession(s.ID)
 	}
 
+	// Release the shared client (decrements ref count, closes if zero)
+	if module != "" && s.ClientPool != nil {
+		s.ClientPool.ReleaseClient(module, s.ID)
+	}
+
+	s.mu.Lock()
 	s.State = StateIdle
+	s.SharedClient = nil
+	s.mu.Unlock()
+
 	log.Printf("Session %s: Stopped", s.ID)
 	return nil
 }
@@ -160,9 +186,19 @@ func (s *Session) handleVoiceStart(msg WSMessage) error {
 		return s.sendError("Missing module or callsign")
 	}
 
+	// Get or create shared client for this module
+	sharedClient, err := s.ClientPool.GetClient(msg.Module)
+	if err != nil {
+		return fmt.Errorf("failed to get voice client: %w", err)
+	}
+
 	s.Module = msg.Module
 	s.Callsign = msg.Callsign
+	s.SharedClient = sharedClient
 	s.State = StateListening
+
+	// Register this session with the shared client
+	sharedClient.RegisterSession(s)
 
 	log.Printf("Session %s: %s started listening to module %s", s.ID, s.Callsign, s.Module)
 
@@ -179,8 +215,8 @@ func (s *Session) handleVoiceStop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.State == StateTransmitting {
-		s.VoiceClient.SendPTTStop(s.Module, s.Callsign)
+	if s.State == StateTransmitting && s.SharedClient != nil {
+		s.SharedClient.SendPTTStop(s.Module, s.Callsign)
 		s.activeTransmit = false
 	}
 
@@ -231,13 +267,51 @@ func (s *Session) handlePTTPress(msg WSMessage) error {
 	}
 
 	// Send PTT start to reflector
-	if err := s.VoiceClient.SendPTTStart(s.Module, s.Callsign); err != nil {
+	if s.SharedClient == nil {
+		return fmt.Errorf("not connected to voice client")
+	}
+	if err := s.SharedClient.SendPTTStart(s.Module, s.Callsign); err != nil {
 		return fmt.Errorf("failed to send PTT start: %w", err)
 	}
 
 	s.State = StateTransmitting
 	s.activeTransmit = true
-	s.txStartTime = time.Now()
+	s.txStartTime = time.Now().UTC()
+
+	// Create database record for this transmission
+	if s.DB != nil {
+		hearing := Hearing{
+			My:        s.Callsign,
+			Ur:        "CQCQCQ",
+			Rpt1:      s.Module,
+			Rpt2:      "WEB " + s.Module,
+			Module:    s.Module,
+			Protocol:  "VOICE",
+			CreatedAt: s.txStartTime,
+		}
+		if err := s.DB.Create(&hearing).Error; err != nil {
+			log.Printf("Session %s: Failed to create hearing record: %v", s.ID, err)
+		} else {
+			s.hearingID = hearing.ID
+			log.Printf("Session %s: Created hearing record ID %d", s.ID, hearing.ID)
+
+			// Broadcast hearing event to all connected WebSocket clients
+			if s.Hub != nil {
+				s.Hub.BroadcastJSON(map[string]interface{}{
+					"type":       "hearing",
+					"status":     "active",
+					"id":         hearing.ID,
+					"my":         s.Callsign,
+					"ur":         "CQCQCQ",
+					"rpt1":       s.Module,
+					"rpt2":       "WEB " + s.Module,
+					"module":     s.Module,
+					"protocol":   "VOICE",
+					"created_at": s.txStartTime,
+				})
+			}
+		}
+	}
 
 	log.Printf("Session %s: %s started transmitting on module %s", s.ID, s.Callsign, s.Module)
 
@@ -255,13 +329,44 @@ func (s *Session) handlePTTRelease() error {
 	}
 
 	// Send PTT stop to reflector
-	if err := s.VoiceClient.SendPTTStop(s.Module, s.Callsign); err != nil {
+	if s.SharedClient == nil {
+		return fmt.Errorf("not connected to voice client")
+	}
+	if err := s.SharedClient.SendPTTStop(s.Module, s.Callsign); err != nil {
 		return fmt.Errorf("failed to send PTT stop: %w", err)
 	}
 
 	duration := time.Since(s.txStartTime)
+	durationSecs := duration.Seconds()
 	s.State = StateListening
 	s.activeTransmit = false
+
+	// Update database record with duration
+	if s.DB != nil && s.hearingID > 0 {
+		if err := s.DB.Model(&Hearing{}).Where("id = ?", s.hearingID).Update("duration", durationSecs).Error; err != nil {
+			log.Printf("Session %s: Failed to update hearing duration: %v", s.ID, err)
+		} else {
+			log.Printf("Session %s: Updated hearing record ID %d with duration %.2fs", s.ID, s.hearingID, durationSecs)
+
+			// Broadcast closing event to all connected WebSocket clients
+			if s.Hub != nil {
+				s.Hub.BroadcastJSON(map[string]interface{}{
+					"type":       "hearing",
+					"status":     "ended",
+					"id":         s.hearingID,
+					"my":         s.Callsign,
+					"ur":         "CQCQCQ",
+					"rpt1":       s.Module,
+					"rpt2":       "WEB " + s.Module,
+					"module":     s.Module,
+					"protocol":   "VOICE",
+					"created_at": s.txStartTime,
+					"duration":   durationSecs,
+				})
+			}
+		}
+		s.hearingID = 0
+	}
 
 	log.Printf("Session %s: %s stopped transmitting on module %s (duration: %v)",
 		s.ID, s.Callsign, s.Module, duration)
@@ -293,7 +398,10 @@ func (s *Session) handleAudioData(msg WSMessage) error {
 	}
 
 	// Send audio data to reflector
-	if err := s.VoiceClient.SendAudioData(s.Module, s.Callsign, opusData); err != nil {
+	if s.SharedClient == nil {
+		return fmt.Errorf("not connected to voice client")
+	}
+	if err := s.SharedClient.SendAudioData(s.Module, s.Callsign, opusData); err != nil {
 		return fmt.Errorf("failed to send audio data: %w", err)
 	}
 

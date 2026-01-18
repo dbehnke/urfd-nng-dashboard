@@ -9,14 +9,17 @@ import (
 
 	"github.com/dbehnke/urfd-nng-dashboard/internal/voice"
 	"github.com/gorilla/websocket"
+	"gorm.io/gorm"
 )
 
 type Server struct {
-	Hub           *Hub
-	Assets        fs.FS
-	OnConnect     func(*Client)
-	VoiceConfig   *voice.SessionConfig
-	VoiceSessions map[string]*voice.Session
+	Hub             *Hub
+	Assets          fs.FS
+	OnConnect       func(*Client)
+	VoiceConfig     *voice.SessionConfig
+	VoiceSessions   map[string]*voice.Session
+	VoiceClientPool *voice.VoiceClientPool // Shared pool for NNG connections
+	DB              *gorm.DB
 }
 
 func NewServer(hub *Hub, assets fs.FS) *Server {
@@ -93,7 +96,7 @@ func (s *Server) handleVoiceWebSocket(w http.ResponseWriter, r *http.Request) {
 	sessionID := generateSessionID()
 
 	// Create voice session
-	session, err := voice.NewSession(sessionID, conn, s.VoiceConfig)
+	session, err := voice.NewSession(sessionID, conn, s.VoiceConfig, s.DB, s.Hub, s.VoiceClientPool)
 	if err != nil {
 		log.Printf("Failed to create voice session: %v", err)
 		conn.Close()

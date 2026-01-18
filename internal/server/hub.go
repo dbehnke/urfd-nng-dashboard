@@ -133,21 +133,8 @@ func (h *Hub) SetActiveTransmitter(module, callsign, sessionID string) {
 	h.activeTransmitters[module] = callsign
 	log.Printf("Active transmitter on module %s: %s (session %s)", module, callsign, sessionID)
 
-	// Broadcast hearing event to dashboard clients
-	// Convert session ID to numeric hash for frontend compatibility
-	numericID := hashSessionID(sessionID)
-	h.BroadcastJSON(map[string]interface{}{
-		"type":       "hearing",
-		"id":         numericID,
-		"my":         callsign,
-		"ur":         "CQCQCQ",
-		"rpt1":       "",
-		"rpt2":       "",
-		"module":     module,
-		"protocol":   "WEB",
-		"status":     "active",
-		"created_at": nil, // Frontend will use current time
-	})
+	// Note: Hearing events are broadcast by the voice session handler in session.go
+	// We don't broadcast here to avoid duplicate entries
 }
 
 // ClearActiveTransmitter removes the active transmitter for a module
@@ -157,12 +144,6 @@ func (h *Hub) ClearActiveTransmitter(module, sessionID string) {
 	delete(h.activeTransmitters, module)
 	log.Printf("Cleared active transmitter on module %s (session %s)", module, sessionID)
 
-	// Broadcast closing event to dashboard clients
-	numericID := hashSessionID(sessionID)
-	h.BroadcastJSON(map[string]interface{}{
-		"type":   "closing",
-		"id":     numericID,
-		"module": module,
-		"status": "ended",
-	})
+	// Note: Closing events are broadcast by the voice session handler in session.go
+	// We don't broadcast here to avoid duplicate entries
 }
