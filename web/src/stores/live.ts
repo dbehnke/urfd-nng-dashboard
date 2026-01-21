@@ -92,8 +92,22 @@ export const useLiveStore = defineStore('live', () => {
         ws.onmessage = (msg) => {
             const ev = JSON.parse(msg.data)
 
+            if (ev.type === 'hearing_update') {
+                // Handle recording complete - update hearing with audio file
+                console.log(`[LiveStore] Recording complete for hearing ${ev.id}: ${ev.audio_file}`)
+                const h = lastHeard.value.find(x => x.id === ev.id)
+                if (h) {
+                    h.audio_file = ev.audio_file
+                    console.log(`[LiveStore] Updated hearing ${ev.id} with audio_file: ${ev.audio_file}`)
+                } else {
+                    console.warn(`[LiveStore] Could not find hearing ${ev.id} to update with audio_file`)
+                }
+                return
+            }
+
             if (ev.type === 'hearing' || ev.type === 'closing') {
                 if ((ev.type === 'closing' || ev.status === 'ended') && ev.id) {
+                    console.log(`[LiveStore] Ending session ${ev.id} for ${ev.my}`)
                     delete activeSessions[ev.id]
                     player.isRecording = Object.keys(activeSessions).length > 0 // Update recording state
 
@@ -107,19 +121,24 @@ export const useLiveStore = defineStore('live', () => {
                         // Capture audio file
                         if (ev.recording) h.audio_file = ev.recording
                         if (ev.audio_file) h.audio_file = ev.audio_file
+                        console.log(`[LiveStore] Updated entry ${ev.id}: duration=${ev.duration}, status=ended`)
+                    } else {
+                        console.warn(`[LiveStore] Could not find entry ${ev.id} to mark as ended`)
                     }
                     return
                 }
 
                 // Update active heartbeat by ID
-                if (ev.id) {
+                if (ev.id && ev.status !== 'ended') {
                     // Safety: Before marking this ID as active, ensure no other session for the SAME callsign is active
                     for (const id in activeSessions) {
                         const existing = lastHeard.value.find(h => h.id === Number(id))
                         if (existing && existing.my === ev.my && existing.id !== ev.id) {
+                            console.log(`[LiveStore] Removing duplicate session ${id} for ${ev.my} (new session ${ev.id})`)
                             delete activeSessions[Number(id)]
                         }
                     }
+                    console.log(`[LiveStore] Marking session ${ev.id} as active for ${ev.my} (status=${ev.status})`)
                     activeSessions[ev.id] = Date.now()
                     player.isRecording = true
                 }
