@@ -400,8 +400,10 @@ func main() {
 			ReflectorAddr:    cfg.Voice.ReflectorAddr,
 		}
 		// Initialize voice client pool
-		srv.VoiceClientPool = voice.NewVoiceClientPool(cfg.Voice.ReflectorAddr)
-		logger.Log.Info("Voice chat enabled", zap.String("reflector_addr", cfg.Voice.ReflectorAddr))
+		srv.VoiceClientPool = voice.NewVoiceClientPool(cfg.Voice.ReflectorAddr, cfg.Voice.ControlAddr)
+		logger.Log.Info("Voice chat enabled",
+			zap.String("reflector_addr", cfg.Voice.ReflectorAddr),
+			zap.String("control_addr", cfg.Voice.ControlAddr))
 	}
 
 	// API Routes

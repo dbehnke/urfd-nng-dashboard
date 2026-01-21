@@ -1,7 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
-export type VoiceState = 'disconnected' | 'listening' | 'transmitting' | 'rx_busy'
+export type VoiceState = 
+  | 'disconnected'     // No WebSocket connection
+  | 'listening'        // Ready to TX or RX
+  | 'ptt_requesting'   // PTT requested, waiting for server grant
+  | 'transmitting'     // Actively transmitting (server granted)
+  | 'ptt_releasing'    // PTT release sent, waiting for server ack
+  | 'rx_busy'          // Receiving audio from peer
 
 export interface VoiceSession {
   callsign: string
@@ -25,7 +31,7 @@ export const useVoiceStore = defineStore('voice', () => {
     return isEnabled.value && 
            callsign.value.length > 0 && 
            selectedModule.value !== null && 
-           (state.value === 'listening' || state.value === 'transmitting')
+           state.value === 'listening'  // ONLY when listening
   })
 
   const session = computed<VoiceSession>(() => ({

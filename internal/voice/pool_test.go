@@ -315,3 +315,177 @@ func TestBroadcastAudioToSessions_EmptySessions_NoError(t *testing.T) {
 	// Should not panic or error with empty sessions
 	shared.BroadcastPeerAudio(opusData, "session1", "KF8S", "A")
 }
+
+// TestRequestPTT_ConcurrentRequests tests that concurrent PTT requests are handled correctly
+func TestRequestPTT_ConcurrentRequests(t *testing.T) {
+	shared := &SharedVoiceClient{
+		module:   "A",
+		sessions: make(map[string]*Session),
+	}
+
+	const numRequests = 10
+	results := make(chan struct {
+		sessionID string
+		callsign  string
+		granted   bool
+	}, numRequests)
+
+	// Launch concurrent PTT requests
+	for i := 0; i < numRequests; i++ {
+		go func(id int) {
+			sessionID := fmt.Sprintf("session%d", id)
+			callsign := fmt.Sprintf("CALL%d", id)
+			err := shared.RequestPTT(sessionID, callsign)
+			results <- struct {
+				sessionID string
+				callsign  string
+				granted   bool
+			}{sessionID, callsign, err == nil}
+		}(i)
+	}
+
+	// Collect results
+	grantedCount := 0
+	var grantedCallsign string
+	for i := 0; i < numRequests; i++ {
+		result := <-results
+		if result.granted {
+			grantedCount++
+			grantedCallsign = result.callsign
+		}
+	}
+
+	// Exactly one request should be granted
+	if grantedCount != 1 {
+		t.Errorf("Expected exactly 1 PTT grant, got %d", grantedCount)
+	}
+
+	// The granted callsign should be the active talker
+	if shared.activeTalker != grantedCallsign {
+		t.Errorf("Expected activeTalker to be '%s', got '%s'", grantedCallsign, shared.activeTalker)
+	}
+}
+
+// TestRequestPTT_SameCallsign_MultipleSessions tests that multiple sessions with the same callsign can request PTT
+func TestRequestPTT_SameCallsign_MultipleSessions(t *testing.T) {
+	shared := &SharedVoiceClient{
+		module:   "A",
+		sessions: make(map[string]*Session),
+	}
+
+	callsign := "KF8S"
+
+	// First session gets PTT
+	err1 := shared.RequestPTT("session1", callsign)
+	if err1 != nil {
+		t.Errorf("First PTT request should be granted, got error: %v", err1)
+	}
+
+	// Second session with same callsign should also get PTT (same callsign allowed)
+	err2 := shared.RequestPTT("session2", callsign)
+	if err2 != nil {
+		t.Errorf("Second PTT request with same callsign should be granted, got error: %v", err2)
+	}
+
+	// Active talker should still be the callsign
+	if shared.activeTalker != callsign {
+		t.Errorf("Expected activeTalker to be '%s', got '%s'", callsign, shared.activeTalker)
+	}
+}
+
+// TestReleasePTT_ConcurrentReleases tests that concurrent PTT releases are handled correctly
+func TestReleasePTT_ConcurrentReleases(t *testing.T) {
+	shared := &SharedVoiceClient{
+		module:       "A",
+		sessions:     make(map[string]*Session),
+		activeTalker: "KF8S",
+	}
+
+	const numReleases = 5
+	done := make(chan bool, numReleases)
+
+	// Launch concurrent release attempts
+	for i := 0; i < numReleases; i++ {
+		go func(id int) {
+			sessionID := fmt.Sprintf("session%d", id)
+			// Some releases from wrong callsign, some from correct
+			callsign := "KF8S"
+			if id%2 == 1 {
+				callsign = fmt.Sprintf("WRONG%d", id)
+			}
+			shared.ReleasePTT(sessionID, callsign)
+			done <- true
+		}(i)
+	}
+
+	// Wait for all releases to complete
+	for i := 0; i < numReleases; i++ {
+		<-done
+	}
+
+	// Active talker should be cleared (at least one correct release happened)
+	if shared.activeTalker != "" {
+		t.Errorf("Expected activeTalker to be cleared, got '%s'", shared.activeTalker)
+	}
+}
+
+// TestRequestPTT_AfterRelease tests that PTT can be requested again after release
+func TestRequestPTT_AfterRelease(t *testing.T) {
+	shared := &SharedVoiceClient{
+		module:       "A",
+		sessions:     make(map[string]*Session),
+		activeTalker: "KF8S",
+	}
+
+	// Release PTT
+	shared.ReleasePTT("session1", "KF8S")
+
+	// Active talker should be cleared
+	if shared.activeTalker != "" {
+		t.Errorf("Expected activeTalker to be cleared after release, got '%s'", shared.activeTalker)
+	}
+
+	// New request should be granted
+	err := shared.RequestPTT("session2", "W8EAP")
+	if err != nil {
+		t.Errorf("PTT request after release should be granted, got error: %v", err)
+	}
+
+	// New active talker should be set
+	if shared.activeTalker != "W8EAP" {
+		t.Errorf("Expected activeTalker to be 'W8EAP', got '%s'", shared.activeTalker)
+	}
+}
+
+// TestRequestPTT_MultipleModules_Isolation tests that different modules operate independently
+func TestRequestPTT_MultipleModules_Isolation(t *testing.T) {
+	// Create separate clients for different modules
+	moduleA := &SharedVoiceClient{
+		module:   "A",
+		sessions: make(map[string]*Session),
+	}
+
+	moduleB := &SharedVoiceClient{
+		module:   "B",
+		sessions: make(map[string]*Session),
+	}
+
+	// Both should grant PTT independently
+	errA := moduleA.RequestPTT("session1", "KF8S")
+	errB := moduleB.RequestPTT("session2", "W8EAP")
+
+	if errA != nil {
+		t.Errorf("PTT request on module A should be granted, got error: %v", errA)
+	}
+	if errB != nil {
+		t.Errorf("PTT request on module B should be granted, got error: %v", errB)
+	}
+
+	// Each module should have its own active talker
+	if moduleA.activeTalker != "KF8S" {
+		t.Errorf("Module A activeTalker should be 'KF8S', got '%s'", moduleA.activeTalker)
+	}
+	if moduleB.activeTalker != "W8EAP" {
+		t.Errorf("Module B activeTalker should be 'W8EAP', got '%s'", moduleB.activeTalker)
+	}
+}

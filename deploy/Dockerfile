@@ -14,8 +14,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=frontend-builder /app/web/dist ./internal/assets/dist
-RUN GIT_VERSION=$(git describe --tags --always --dirty --match "v*" | sed 's/-g\([0-9a-f]\{7,\}\)/-\1/') && \
-    GIT_COMMIT=$(git rev-parse --short HEAD) && \
+RUN GIT_VERSION=$(git describe --tags --always --dirty --match "v*" 2>/dev/null | sed 's/-g\([0-9a-f]\{7,\}\)/-\1/' || echo "dev") && \
+    GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown") && \
     BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) && \
     go build -ldflags="-X main.Version=${GIT_VERSION} -X main.Commit=${GIT_COMMIT} -X main.Date=${BUILD_DATE}" -o /app/urfd-dashboard ./cmd/dashboard
 

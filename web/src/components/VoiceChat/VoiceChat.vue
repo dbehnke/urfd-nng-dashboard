@@ -16,13 +16,31 @@ const reflectorStore = useReflectorStore()
 // Refs
 const voiceEngine = ref<InstanceType<typeof VoiceEngine> | null>(null)
 const callsignInput = ref('')
-const isTransmitting = ref(false)
 const showPasswordDialog = ref(false)
 const pendingToggle = ref(false)
 const countdown = ref(0)
 let countdownInterval: number | null = null
 
 // Computed
+const isTransmitting = computed(() => {
+  return voiceStore.state === 'transmitting' || 
+         voiceStore.state === 'ptt_requesting' ||
+         voiceStore.state === 'ptt_releasing'
+})
+
+const pttButtonDisabled = computed(() => {
+  // Button should be enabled if:
+  // 1. Can start transmitting (in listening state), OR
+  // 2. Currently in any transmission-related state (can stop)
+  // Button disabled only when: disconnected, rx_busy, or not configured
+  if (voiceStore.state === 'disconnected') return true
+  if (voiceStore.state === 'rx_busy') return true
+  if (!voiceStore.isEnabled) return true
+  if (voiceStore.callsign.length === 0) return true
+  if (voiceStore.selectedModule === null) return true
+  return false
+})
+
 const websocketUrl = computed(() => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${protocol}//${window.location.host}/ws/voice`
@@ -42,14 +60,18 @@ const transcodedModules = computed(() => {
 const stateDisplay = computed(() => {
   switch (voiceStore.state) {
     case 'listening':
-      return { text: 'Listening', color: 'text-green-600' }
+      return { text: '🎧 Listening', color: 'text-green-600' }
+    case 'ptt_requesting':
+      return { text: '⏳ Requesting...', color: 'text-yellow-600' }
     case 'transmitting':
-      return { text: 'Transmitting', color: 'text-red-600' }
+      return { text: '📡 Transmitting', color: 'text-red-600' }
+    case 'ptt_releasing':
+      return { text: '⏳ Releasing...', color: 'text-yellow-600' }
     case 'rx_busy':
-      return { text: 'RX Busy', color: 'text-yellow-600' }
+      return { text: '👂 RX Busy', color: 'text-blue-600' }
     case 'disconnected':
     default:
-      return { text: 'Disconnected', color: 'text-gray-600' }
+      return { text: '🔌 Disconnected', color: 'text-gray-600' }
   }
 })
 
@@ -88,13 +110,17 @@ const handleModuleChange = (event: Event) => {
 }
 
 const handlePTTToggle = async () => {
-  console.log('[VoiceChat] Toggle clicked, isTransmitting:', isTransmitting.value)
+  console.log('[VoiceChat] Toggle clicked, state:', voiceStore.state)
   
-  if (isTransmitting.value) {
-    // Currently transmitting, stop it
+  if (voiceStore.state === 'transmitting' || voiceStore.state === 'ptt_releasing') {
+    // Currently transmitting or releasing, stop it
     console.log('[VoiceChat] Stopping transmission...')
-    stopTransmitting()
-  } else {
+    voiceEngine.value?.stopPTT()
+  } else if (voiceStore.state === 'ptt_requesting') {
+    // User clicked again while waiting for server grant - cancel the request
+    console.log('[VoiceChat] Cancelling PTT request...')
+    voiceEngine.value?.cancelPTTRequest()
+  } else if (voiceStore.state === 'listening') {
     // Not transmitting, start it
     if (!voiceStore.canTransmit) {
       console.warn('Cannot transmit:', voiceStore.state)
@@ -111,24 +137,8 @@ const handlePTTToggle = async () => {
     
     // Start transmitting with stored password
     console.log('[VoiceChat] Starting transmission...')
-    await startTransmitting(voiceStore.password)
+    await voiceEngine.value?.startPTT(voiceStore.password)
   }
-}
-
-const startTransmitting = async (password?: string) => {
-  const success = await voiceEngine.value?.startPTT(password)
-  if (success) {
-    isTransmitting.value = true
-    startCountdown()
-  }
-}
-
-const stopTransmitting = () => {
-  console.log('[VoiceChat] stopTransmitting called, isTransmitting:', isTransmitting.value)
-  isTransmitting.value = false
-  voiceEngine.value?.stopPTT()
-  stopCountdown()
-  console.log('[VoiceChat] stopTransmitting complete')
 }
 
 const startCountdown = () => {
@@ -153,23 +163,15 @@ const stopCountdown = () => {
   countdown.value = 0
 }
 
-const handleStateChange = (newState: 'listening' | 'transmitting' | 'rx_busy' | 'disconnected') => {
-  console.log('[VoiceChat] State change:', newState, 'current isTransmitting:', isTransmitting.value)
+const handleStateChange = (newState: 'listening' | 'transmitting' | 'rx_busy' | 'disconnected' | 'ptt_requesting' | 'ptt_releasing') => {
+  console.log('[VoiceChat] State change:', newState)
   voiceStore.setState(newState)
   
-  // Sync local isTransmitting state with engine state
-  if (newState === 'transmitting') {
-    isTransmitting.value = true
-    if (!countdownInterval) {
-      startCountdown()
-    }
-  } else {
-    // Stop transmitting if we're currently transmitting
-    if (isTransmitting.value) {
-      console.log('[VoiceChat] Engine state changed to non-transmitting, stopping...')
-      isTransmitting.value = false
-      stopCountdown()
-    }
+  // Manage countdown timer based on state
+  if (newState === 'transmitting' && !countdownInterval) {
+    startCountdown()
+  } else if (newState !== 'transmitting' && countdownInterval) {
+    stopCountdown()
   }
 }
 
@@ -186,7 +188,7 @@ const handlePasswordSubmit = async (password: string) => {
   // If toggle was pending, start transmitting now
   if (pendingToggle.value && voiceEngine.value) {
     pendingToggle.value = false
-    await startTransmitting(password)
+    await voiceEngine.value.startPTT(password)
   }
 }
 
@@ -330,7 +332,7 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
     <!-- PTT Button -->
     <div class="flex justify-center pt-2">
       <PTTButton
-        :disabled="!voiceStore.canTransmit"
+        :disabled="pttButtonDisabled"
         :transmitting="isTransmitting"
         @toggle="handlePTTToggle"
       />

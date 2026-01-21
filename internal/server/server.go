@@ -77,8 +77,8 @@ func (s *Server) Start(addr string) error {
 }
 
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
+	ReadBufferSize:  8192, // Increased for audio streaming
+	WriteBufferSize: 8192, // Increased for audio streaming
 	CheckOrigin: func(r *http.Request) bool {
 		return true // Allow all for now
 	},
@@ -128,8 +128,9 @@ func (s *Server) handleVoiceWebSocket(w http.ResponseWriter, r *http.Request) {
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
+			log.Printf("Voice WS closed for session %s: %v (type: %T)", sessionID, err, err)
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("Voice WS error: %v", err)
+				log.Printf("Voice WS unexpected close error: %v", err)
 			}
 			break
 		}

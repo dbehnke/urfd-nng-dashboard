@@ -50,6 +50,7 @@ type AudioConfig struct {
 type VoiceConfig struct {
 	Enable           bool   `mapstructure:"enable" json:"enable"`
 	ReflectorAddr    string `mapstructure:"reflector_addr" json:"reflector_addr"`
+	ControlAddr      string `mapstructure:"control_addr" json:"control_addr"`
 	TransmitPassword string `mapstructure:"transmit_password" json:"transmit_password"`
 	MaxClients       int    `mapstructure:"max_clients" json:"max_clients"`
 	OpusBitrate      int    `mapstructure:"opus_bitrate" json:"opus_bitrate"`
@@ -69,6 +70,7 @@ func LoadConfig(path string) (*Config, error) {
 	v.SetDefault("logging.console", true)
 	v.SetDefault("voice.enable", false)
 	v.SetDefault("voice.reflector_addr", "tcp://127.0.0.1:5556")
+	v.SetDefault("voice.control_addr", "tcp://127.0.0.1:6556")
 	v.SetDefault("voice.transmit_password", "")
 	v.SetDefault("voice.max_clients", 100)
 	v.SetDefault("voice.opus_bitrate", 12000)

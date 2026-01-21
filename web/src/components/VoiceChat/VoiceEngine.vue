@@ -11,12 +11,13 @@ const props = defineProps<{
 
 // Emits
 const emit = defineEmits<{
-  stateChange: [state: 'listening' | 'transmitting' | 'rx_busy' | 'disconnected']
+  stateChange: [state: 'listening' | 'transmitting' | 'rx_busy' | 'disconnected' | 'ptt_requesting' | 'ptt_releasing']
   error: [message: string]
 }>()
 
 // State
 const ws = ref<WebSocket | null>(null)
+const sessionId = ref<string>('') // Our session ID for echo prevention
 const audioContext = ref<AudioContext | null>(null)
 const opusDecoder = ref<any>(null)
 const opusEncoder = ref<any>(null)
@@ -25,7 +26,7 @@ const mediaStream = ref<MediaStream | null>(null)
 const micPermissionGranted = ref(false)
 const micPermissionDenied = ref(false)
 const isConnected = ref(false)
-const currentState = ref<'listening' | 'transmitting' | 'rx_busy' | 'disconnected'>('disconnected')
+const currentState = ref<'listening' | 'transmitting' | 'rx_busy' | 'disconnected' | 'ptt_requesting' | 'ptt_releasing'>('disconnected')
 const isReceivingAudio = ref(false)
 
 // Audio level monitoring
@@ -34,6 +35,12 @@ const txAnalyser = ref<AnalyserNode | null>(null)
 const rxLevel = ref(0)
 const txLevel = ref(0)
 let levelMonitorInterval: number | null = null
+
+// Audio playback scheduling for continuous playback
+let audioPlaybackTime = 0
+let lastAudioReceiveTime = 0
+let audioTimeoutHandle: number | null = null
+const audioTimeout = 500 // Clear receiving state after 500ms of no audio
 
 // Connection recovery
 const reconnectAttempts = ref(0)
@@ -46,6 +53,13 @@ const shouldReconnect = ref(true)
 const maxTransmitDuration = ref(180000) // Default 180 seconds in milliseconds
 let transmitStartTime: number | null = null
 let transmitTimeoutHandle: number | null = null
+let pttStopping = false // Flag to indicate PTT is in the process of stopping
+
+// PTT request timeout
+const PTT_REQUEST_TIMEOUT = 2000 // 2 seconds
+let pttRequestTimeoutHandle: number | null = null
+const PTT_RELEASE_TIMEOUT = 2000 // 2 seconds
+let pttReleaseTimeoutHandle: number | null = null
 
 // Diagnostic logging
 interface DiagnosticEvent {
@@ -543,6 +557,10 @@ const connect = async () => {
 
   // Enable reconnection for this session
   shouldReconnect.value = true
+  
+  // Generate unique session ID for echo prevention
+  sessionId.value = `web-${Date.now()}-${Math.random().toString(36).substring(7)}`
+  console.log('[VoiceEngine] Generated session ID:', sessionId.value)
 
   // Clear any pending reconnect
   if (reconnectTimeout) {
@@ -582,11 +600,12 @@ const connect = async () => {
       // Request Wake Lock to keep screen on
       requestWakeLock()
       
-      // Send voice_start message
+      // Send voice_start message with session ID
       const startMsg = {
         type: 'voice_start',
         module: props.module,
-        callsign: props.callsign
+        callsign: props.callsign,
+        session_id: sessionId.value  // Include session ID for echo prevention
       }
       ws.value?.send(JSON.stringify(startMsg))
       
@@ -621,6 +640,41 @@ const connect = async () => {
             }
             break
           case 'audio_data':
+          case 'peer_audio':
+            // Handle both reflector audio (audio_data) and peer-to-peer audio (peer_audio)
+            console.log('[VoiceEngine] Received audio:', {
+              type: data.type,
+              from: data.from,
+              fromSessionId: data.from_session_id,
+              mySessionId: sessionId.value,
+              isOwnSession: data.from_session_id === sessionId.value
+            })
+            
+            // ✅ CRITICAL: If BOTH from and fromSessionId are missing, this is likely echo
+            // The reflector is sending back audio without proper sender info
+            if (!data.from && !data.from_session_id) {
+              console.warn('[VoiceEngine] ⚠️ BLOCKING audio with no sender info (likely reflector echo)')
+              break
+            }
+            
+            // ✅ PRIMARY FILTER: Skip if this is our own session
+            if (data.from_session_id && data.from_session_id === sessionId.value) {
+              console.log('[VoiceEngine] ✅ Skipping own audio (session:', data.from_session_id, ')')
+              break
+            }
+            
+            // FALLBACK: Also check callsign for older messages or reflector audio
+            if (data.from && data.from === props.callsign) {
+              console.log('[VoiceEngine] ✅ Skipping own audio via callsign (from:', data.from, ')')
+              break
+            }
+            
+            // DEFENSIVE: If no session ID but we're transmitting, skip it
+            if (!data.from_session_id && currentState.value === 'transmitting') {
+              console.warn('[VoiceEngine] ⚠️ Skipping audio without session ID while transmitting (likely echo)')
+              break
+            }
+            
             isReceivingAudio.value = true
             
             // Update Media Session with active talker
@@ -631,22 +685,99 @@ const connect = async () => {
             await handleAudioData(data)
             break
           case 'voice_state':
-            currentState.value = data.state
+            // Clear PTT request timeout if active
+            if (pttRequestTimeoutHandle) {
+              clearTimeout(pttRequestTimeoutHandle)
+              pttRequestTimeoutHandle = null
+            }
+            
+            // Clear PTT release timeout if active
+            if (pttReleaseTimeoutHandle) {
+              clearTimeout(pttReleaseTimeoutHandle)
+              pttReleaseTimeoutHandle = null
+            }
+            
+            const newState = data.state
+            const oldState = currentState.value
+            currentState.value = newState
+            
+            // ✅ START encoder when server grants PTT
+            if (newState === 'transmitting' && oldState === 'ptt_requesting') {
+              if (opusEncoder.value) {
+                console.log('[VoiceEngine] Server granted PTT, starting encoder')
+                opusEncoder.value.start()
+                
+                // Start transmit timer
+                transmitStartTime = Date.now()
+                transmitTimeoutHandle = window.setTimeout(() => {
+                  console.warn('Max transmit duration reached, stopping PTT')
+                  emit('error', `Maximum transmit duration (${maxTransmitDuration.value / 1000}s) reached`)
+                  logDiagnostic('ptt_timeout', { duration: maxTransmitDuration.value })
+                  stopPTT()
+                }, maxTransmitDuration.value)
+                
+                logDiagnostic('ptt_granted', { 
+                  module: props.module,
+                  callsign: props.callsign
+                })
+              }
+            }
+            
+            // ✅ STOP encoder when server confirms release
+            if (newState === 'listening' && oldState === 'ptt_releasing') {
+              if (opusEncoder.value) {
+                try {
+                  console.log('[VoiceEngine] Server confirmed release, stopping encoder')
+                  opusEncoder.value.stop()
+                } catch (e) {
+                  console.error('Error stopping encoder:', e)
+                }
+              }
+            }
             
             // Update receiving flag based on state
-            if (data.state === 'rx_busy') {
+            if (newState === 'rx_busy') {
               isReceivingAudio.value = true
-            } else if (data.state === 'listening') {
+            } else if (newState === 'listening') {
               isReceivingAudio.value = false
               // Clear active talker when returning to listening
               updateMediaSessionMetadata(null)
             }
             
-            emit('stateChange', data.state)
+            emit('stateChange', newState)
             break
           case 'ptt_denied':
+            // Clear timeout
+            if (pttRequestTimeoutHandle) {
+              clearTimeout(pttRequestTimeoutHandle)
+              pttRequestTimeoutHandle = null
+            }
+            
+            // Parse active talker from reason string
+            // Format: "PTT denied - KC1XXX is transmitting"
+            let deniedByCallsign = 'unknown'
+            const match = data.reason?.match(/PTT denied - (.+?) is transmitting/)
+            if (match) {
+              deniedByCallsign = match[1]
+            }
+            
+            // Update media session to show who's talking
+            updateMediaSessionMetadata(deniedByCallsign)
+            
+            // Show error to user
             console.warn('PTT denied:', data.reason)
-            emit('error', `PTT denied: ${data.reason}. Active talker: ${data.active_talker || 'unknown'}`)
+            emit('error', `Module busy - ${deniedByCallsign} is transmitting`)
+            
+            // ✅ Reset state to listening if we were requesting
+            if (currentState.value === 'ptt_requesting') {
+              currentState.value = 'listening'
+              emit('stateChange', 'listening')
+            }
+            
+            logDiagnostic('ptt_denied', { 
+              reason: data.reason, 
+              active_talker: deniedByCallsign 
+            })
             break
           default:
             console.log('Unknown message type:', data.type)
@@ -667,6 +798,13 @@ const connect = async () => {
       currentState.value = 'disconnected'
       isReceivingAudio.value = false
       emit('stateChange', 'disconnected')
+      
+      // Clear audio timeout and reset playback time
+      if (audioTimeoutHandle) {
+        clearTimeout(audioTimeoutHandle)
+        audioTimeoutHandle = null
+      }
+      audioPlaybackTime = 0
       
       // Set Media Session to paused when disconnected
       setMediaSessionState('paused')
@@ -716,6 +854,24 @@ const disconnect = () => {
   shouldReconnect.value = false // Prevent automatic reconnection
   cancelReconnect()
   
+  // ✅ Clear PTT request timeout
+  if (pttRequestTimeoutHandle) {
+    clearTimeout(pttRequestTimeoutHandle)
+    pttRequestTimeoutHandle = null
+  }
+  
+  // ✅ Clear PTT release timeout
+  if (pttReleaseTimeoutHandle) {
+    clearTimeout(pttReleaseTimeoutHandle)
+    pttReleaseTimeoutHandle = null
+  }
+  
+  // Clear audio timeout
+  if (audioTimeoutHandle) {
+    clearTimeout(audioTimeoutHandle)
+    audioTimeoutHandle = null
+  }
+  
   if (ws.value) {
     // Send voice_stop message
     const stopMsg = { type: 'voice_stop' }
@@ -725,6 +881,10 @@ const disconnect = () => {
     ws.value = null
   }
   isConnected.value = false
+  
+  // Reset audio state
+  isReceivingAudio.value = false
+  audioPlaybackTime = 0
   
   // Set Media Session to none when disconnecting
   setMediaSessionState('none')
@@ -780,11 +940,18 @@ const decodeOpus = async (opusData: Uint8Array): Promise<Float32Array | null> =>
   }
 }
 
-// Play PCM audio through Web Audio API
+// Play PCM audio through Web Audio API with scheduled playback for continuous audio
 const playAudio = (pcmData: Float32Array) => {
   if (!audioContext.value) return
   
   try {
+    const currentTime = audioContext.value.currentTime
+    
+    // Initialize playback time on first packet or if we fell behind
+    if (audioPlaybackTime === 0 || audioPlaybackTime < currentTime) {
+      audioPlaybackTime = currentTime
+    }
+    
     // Create audio buffer
     const audioBuffer = audioContext.value.createBuffer(
       1, // mono
@@ -806,9 +973,52 @@ const playAudio = (pcmData: Float32Array) => {
       source.connect(audioContext.value.destination)
     }
     
-    source.start()
+    // Schedule playback at the next scheduled time for continuous audio
+    source.start(audioPlaybackTime)
+    
+    // Advance playback time by the duration of this buffer
+    audioPlaybackTime += audioBuffer.duration
+    
+    // Update last audio receive time and reset timeout
+    lastAudioReceiveTime = Date.now()
+    resetAudioTimeout()
+    
+    // Auto-cleanup when audio finishes
+    source.onended = () => {
+      // Check if we should clear receiving state (no audio for audioTimeout ms)
+      checkAudioTimeout()
+    }
   } catch (error) {
     console.error('Error playing audio:', error)
+  }
+}
+
+// Reset audio timeout - clears receiving state if no audio received
+const resetAudioTimeout = () => {
+  if (audioTimeoutHandle) {
+    clearTimeout(audioTimeoutHandle)
+  }
+  audioTimeoutHandle = window.setTimeout(() => {
+    checkAudioTimeout()
+  }, audioTimeout)
+}
+
+// Check if we should clear receiving state
+const checkAudioTimeout = () => {
+  const timeSinceLastAudio = Date.now() - lastAudioReceiveTime
+  if (timeSinceLastAudio >= audioTimeout && isReceivingAudio.value) {
+    console.log('[VoiceEngine] Audio timeout - clearing receiving state')
+    isReceivingAudio.value = false
+    audioPlaybackTime = 0 // Reset playback time for next transmission
+    
+    // Also clear rx_busy state if stuck
+    if (currentState.value === 'rx_busy') {
+      console.log('[VoiceEngine] Clearing stuck rx_busy state')
+      currentState.value = 'listening'
+      emit('stateChange', 'listening')
+    }
+    
+    logDiagnostic('audio_timeout', { timeSinceLastAudio })
   }
 }
 
@@ -844,6 +1054,10 @@ const startPTT = async (password?: string): Promise<boolean> => {
     // Resume AudioContext if suspended (iOS requirement)
     await resumeAudioContext()
     
+    // ✅ Set requesting state (don't set transmitting yet!)
+    currentState.value = 'ptt_requesting'
+    emit('stateChange', 'ptt_requesting')
+    
     // Send PTT press message
     const pttMsg: any = {
       type: 'ptt_press',
@@ -857,25 +1071,24 @@ const startPTT = async (password?: string): Promise<boolean> => {
     
     ws.value?.send(JSON.stringify(pttMsg))
     
-    // Start recording
-    opusEncoder.value.start()
+    // ✅ Start timeout - if server doesn't respond in 2s, assume denied
+    pttRequestTimeoutHandle = window.setTimeout(() => {
+      if (currentState.value === 'ptt_requesting') {
+        currentState.value = 'listening'
+        emit('stateChange', 'listening')
+        emit('error', 'PTT request timed out - server did not respond')
+        logDiagnostic('ptt_request_timeout', {})
+      }
+    }, PTT_REQUEST_TIMEOUT)
     
-    // Start transmit timer
-    transmitStartTime = Date.now()
-    transmitTimeoutHandle = window.setTimeout(() => {
-      console.warn('Max transmit duration reached, stopping PTT')
-      emit('error', `Maximum transmit duration (${maxTransmitDuration.value / 1000}s) reached`)
-      logDiagnostic('ptt_timeout', { duration: maxTransmitDuration.value })
-      stopPTT()
-    }, maxTransmitDuration.value)
-    
-    currentState.value = 'transmitting'
-    logDiagnostic('ptt_started', { 
+    logDiagnostic('ptt_requested', { 
       module: props.module,
       callsign: props.callsign,
       hasPassword: !!password
     })
-    console.log('PTT started')
+    
+    // ✅ DON'T start encoder here - wait for voice_state: 'transmitting'
+    
     return true
   } catch (error) {
     console.error('Failed to start PTT:', error)
@@ -887,12 +1100,21 @@ const startPTT = async (password?: string): Promise<boolean> => {
 
 // Stop PTT
 const stopPTT = () => {
-  console.log('[VoiceEngine] stopPTT called, opusEncoder exists:', !!opusEncoder.value)
+  console.log('[VoiceEngine] stopPTT called, state:', currentState.value)
   
-  if (!opusEncoder.value) {
-    console.log('[VoiceEngine] No encoder, returning early')
+  if (!opusEncoder.value || pttStopping) {
+    console.log('[VoiceEngine] No encoder or already stopping, returning early')
     return
   }
+
+  // Only allow stopping if we're actually transmitting
+  if (currentState.value !== 'transmitting') {
+    console.log('[VoiceEngine] Not transmitting, ignoring stopPTT')
+    return
+  }
+
+  // Set stopping flag to prevent re-entry
+  pttStopping = true
 
   // Clear transmit timeout
   if (transmitTimeoutHandle) {
@@ -909,32 +1131,73 @@ const stopPTT = () => {
   }
 
   try {
-    // Stop recording
-    console.log('[VoiceEngine] Stopping encoder...')
-    opusEncoder.value.stop()
-    
-    // Send PTT release message
-    const pttMsg = {
-      type: 'ptt_release',
-      module: props.module,
-      callsign: props.callsign
+    // ✅ IMMEDIATELY send ptt_release (no delay!)
+    if (ws.value && ws.value.readyState === WebSocket.OPEN) {
+      const pttMsg = {
+        type: 'ptt_release',
+        module: props.module,
+        callsign: props.callsign
+      }
+      console.log('[VoiceEngine] Sending ptt_release message (immediately)')
+      ws.value.send(JSON.stringify(pttMsg))
+    } else {
+      console.warn('[VoiceEngine] WebSocket not open, cannot send ptt_release')
     }
-    console.log('[VoiceEngine] Sending ptt_release message')
-    ws.value?.send(JSON.stringify(pttMsg))
     
-    currentState.value = 'listening'
-    console.log('[VoiceEngine] Emitting stateChange: listening')
-    emit('stateChange', 'listening')
+    // ✅ Set releasing state (encoder will be stopped when server confirms)
+    currentState.value = 'ptt_releasing'
+    pttStopping = false
+    console.log('[VoiceEngine] Emitting stateChange: ptt_releasing')
+    emit('stateChange', 'ptt_releasing')
+    
+    // ✅ Start timeout - if server doesn't respond in 2s, force stop
+    pttReleaseTimeoutHandle = window.setTimeout(() => {
+      if (currentState.value === 'ptt_releasing') {
+        console.warn('[VoiceEngine] PTT release timeout - forcing stop')
+        if (opusEncoder.value) {
+          try {
+            opusEncoder.value.stop()
+          } catch (e) {
+            console.error('Error stopping encoder on timeout:', e)
+          }
+        }
+        currentState.value = 'listening'
+        emit('stateChange', 'listening')
+        logDiagnostic('ptt_release_timeout', {})
+      }
+    }, PTT_RELEASE_TIMEOUT)
     
     logDiagnostic('ptt_stopped', { 
       duration,
       module: props.module,
       callsign: props.callsign
     })
-    console.log('PTT stopped')
+    
+    // Server will send voice_state: 'listening' to confirm release
+    // Encoder will be stopped in the voice_state handler
+    
   } catch (error) {
+    pttStopping = false
     console.error('Failed to stop PTT:', error)
     logDiagnostic('ptt_stop_error', { error: String(error) })
+  }
+}
+
+// Cancel PTT request (if user clicks button again while waiting for server)
+const cancelPTTRequest = () => {
+  console.log('[VoiceEngine] Cancelling PTT request')
+  
+  // Clear the timeout
+  if (pttRequestTimeoutHandle) {
+    clearTimeout(pttRequestTimeoutHandle)
+    pttRequestTimeoutHandle = null
+  }
+  
+  // Reset state to listening
+  if (currentState.value === 'ptt_requesting') {
+    currentState.value = 'listening'
+    emit('stateChange', 'listening')
+    logDiagnostic('ptt_request_cancelled', {})
   }
 }
 
@@ -995,6 +1258,12 @@ onUnmounted(() => {
   stopLevelMonitoring()
   cancelReconnect()
   
+  // Clear audio timeout
+  if (audioTimeoutHandle) {
+    clearTimeout(audioTimeoutHandle)
+    audioTimeoutHandle = null
+  }
+  
   // Clear transmit timeout
   if (transmitTimeoutHandle) {
     clearTimeout(transmitTimeoutHandle)
@@ -1038,6 +1307,7 @@ defineExpose({
   requestMicPermission,
   startPTT,
   stopPTT,
+  cancelPTTRequest,
   micPermissionGranted,
   micPermissionDenied,
   currentState,

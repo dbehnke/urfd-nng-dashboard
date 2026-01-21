@@ -10,9 +10,31 @@ import (
 // This solves the NNG PAIR 1:1 limitation by sharing a single connection
 // across multiple web client sessions
 type VoiceClientPool struct {
-	clients map[string]*SharedVoiceClient // key: module (e.g., "A", "B")
-	mu      sync.RWMutex
-	baseURL string // Base URL template (e.g., "ipc:///tmp/voice_%s")
+	clients        map[string]*SharedVoiceClient // key: module (e.g., "A", "B")
+	mu             sync.RWMutex
+	baseURL        string // Base URL template for audio (e.g., "tcp://urfd:5556")
+	controlBaseURL string // Base URL template for control (e.g., "tcp://urfd:6556")
+}
+
+// Shutdown gracefully closes all connections in the pool
+// Should be called when the application is shutting down
+func (p *VoiceClientPool) Shutdown() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	log.Printf("VoiceClientPool: Shutting down %d client(s)", len(p.clients))
+
+	for module, shared := range p.clients {
+		if shared.client != nil {
+			log.Printf("VoiceClientPool: Disconnecting module %s", module)
+			if err := shared.client.Disconnect(); err != nil {
+				log.Printf("VoiceClientPool: Error disconnecting module %s: %v", module, err)
+			}
+		}
+	}
+
+	p.clients = make(map[string]*SharedVoiceClient)
+	log.Printf("VoiceClientPool: Shutdown complete")
 }
 
 // SharedVoiceClient wraps a VoiceClient with session management
@@ -28,10 +50,11 @@ type SharedVoiceClient struct {
 }
 
 // NewVoiceClientPool creates a new voice client pool
-func NewVoiceClientPool(baseURL string) *VoiceClientPool {
+func NewVoiceClientPool(baseURL, controlBaseURL string) *VoiceClientPool {
 	return &VoiceClientPool{
-		clients: make(map[string]*SharedVoiceClient),
-		baseURL: baseURL,
+		clients:        make(map[string]*SharedVoiceClient),
+		baseURL:        baseURL,
+		controlBaseURL: controlBaseURL,
 	}
 }
 
@@ -54,15 +77,22 @@ func (p *VoiceClientPool) GetClient(module string) (*SharedVoiceClient, error) {
 	// The baseURL should be like "tcp://127.0.0.1:5556"
 	// We need to add (module - 'A') to the port number
 	// For example: Module A = 5556, Module B = 5557, Module C = 5558
-	url, err := p.getModuleURL(module)
+	url, err := p.getModuleURL(module, p.baseURL)
 	if err != nil {
 		log.Printf("VoiceClientPool: Failed to generate URL for module %s: %v", module, err)
 		return nil, fmt.Errorf("failed to generate module URL: %w", err)
 	}
 
-	log.Printf("VoiceClientPool: Creating new voice client for module %s with URL: %s", module, url)
+	// Create module-specific control URL (e.g., 6556 for module A)
+	controlURL, err := p.getModuleURL(module, p.controlBaseURL)
+	if err != nil {
+		log.Printf("VoiceClientPool: Failed to generate control URL for module %s: %v", module, err)
+		return nil, fmt.Errorf("failed to generate module control URL: %w", err)
+	}
 
-	client, err := NewVoiceClient(url)
+	log.Printf("VoiceClientPool: Creating new voice client for module %s with URL: %s (audio), %s (control)", module, url, controlURL)
+
+	client, err := NewVoiceClient(url, controlURL)
 	if err != nil {
 		log.Printf("VoiceClientPool: Failed to create voice client for module %s: %v", module, err)
 		return nil, fmt.Errorf("failed to create voice client: %w", err)
@@ -85,8 +115,16 @@ func (p *VoiceClientPool) GetClient(module string) (*SharedVoiceClient, error) {
 	client.OnMessage("audio_data", func(msg VoiceMessage) {
 		shared.BroadcastAudioToSessions(msg)
 	})
+	client.OnMessage("peer_audio", func(msg VoiceMessage) {
+		// Binary audio from M17/other protocols via urfd
+		shared.BroadcastAudioToSessions(msg)
+	})
 	client.OnMessage("state", func(msg VoiceMessage) {
 		shared.BroadcastStateToSessions(msg)
+	})
+	client.OnMessage("recording_complete", func(msg VoiceMessage) {
+		// Handle recording completion notification from urfd
+		shared.HandleRecordingComplete(msg)
 	})
 
 	// Start listening for messages from reflector
@@ -104,7 +142,7 @@ func (p *VoiceClientPool) GetClient(module string) (*SharedVoiceClient, error) {
 }
 
 // getModuleURL generates the URL for a specific module by adding the module offset to the port
-func (p *VoiceClientPool) getModuleURL(module string) (string, error) {
+func (p *VoiceClientPool) getModuleURL(module string, baseURL string) (string, error) {
 	if len(module) != 1 {
 		return "", fmt.Errorf("invalid module: %s (must be single character)", module)
 	}
@@ -116,19 +154,19 @@ func (p *VoiceClientPool) getModuleURL(module string) (string, error) {
 
 	// Find the last colon (port separator)
 	lastColon := -1
-	for i := len(p.baseURL) - 1; i >= 0; i-- {
-		if p.baseURL[i] == ':' {
+	for i := len(baseURL) - 1; i >= 0; i-- {
+		if baseURL[i] == ':' {
 			lastColon = i
 			break
 		}
 	}
 
 	if lastColon == -1 {
-		return "", fmt.Errorf("base URL has no port: %s", p.baseURL)
+		return "", fmt.Errorf("base URL has no port: %s", baseURL)
 	}
 
 	// Parse the base port
-	basePortStr := p.baseURL[lastColon+1:]
+	basePortStr := baseURL[lastColon+1:]
 	basePort := 0
 	for i := 0; i < len(basePortStr); i++ {
 		if basePortStr[i] < '0' || basePortStr[i] > '9' {
@@ -138,7 +176,7 @@ func (p *VoiceClientPool) getModuleURL(module string) (string, error) {
 	}
 
 	if basePort == 0 {
-		return "", fmt.Errorf("invalid port in base URL: %s", p.baseURL)
+		return "", fmt.Errorf("invalid port in base URL: %s", baseURL)
 	}
 
 	// Calculate module-specific port: base_port + (module - 'A')
@@ -146,12 +184,14 @@ func (p *VoiceClientPool) getModuleURL(module string) (string, error) {
 	modulePort := basePort + moduleOffset
 
 	// Construct the new URL
-	url := p.baseURL[:lastColon+1] + fmt.Sprintf("%d", modulePort)
+	url := baseURL[:lastColon+1] + fmt.Sprintf("%d", modulePort)
 
 	return url, nil
 }
 
 // ReleaseClient releases a reference to a shared client
+// NOTE: We keep connections alive even when refCount hits 0 for resilience
+// Connections are persistent service-to-service pipes that should stay open
 func (p *VoiceClientPool) ReleaseClient(module, sessionID string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -169,11 +209,11 @@ func (p *VoiceClientPool) ReleaseClient(module, sessionID string) {
 
 	log.Printf("VoiceClientPool: Released client for module %s, session %s (refCount: %d)", module, sessionID, refCount)
 
-	// If no more sessions, disconnect and remove
+	// CHANGED: Keep connection alive even when no sessions
+	// The NNG connection is a persistent pipe between dashboard and urfd
+	// It should remain open for fast reconnection when new sessions arrive
 	if refCount <= 0 {
-		shared.client.Disconnect()
-		delete(p.clients, module)
-		log.Printf("VoiceClientPool: Removed client for module %s (no more sessions)", module)
+		log.Printf("VoiceClientPool: Module %s has no active sessions, but keeping connection alive", module)
 	}
 }
 
@@ -214,13 +254,21 @@ func (s *SharedVoiceClient) BroadcastAudioToSessions(msg VoiceMessage) {
 	s.sessionsMu.RLock()
 	defer s.sessionsMu.RUnlock()
 
-	log.Printf("SharedVoiceClient[%s]: Broadcasting reflector audio from %s to %d sessions", s.module, msg.Callsign, len(s.sessions))
+	log.Printf("SharedVoiceClient[%s]: Broadcasting reflector audio from %s (source=%s) to %d sessions", s.module, msg.Callsign, msg.Source, len(s.sessions))
 
 	// Broadcast to all sessions except the sender
 	broadcastCount := 0
 	for sessionID, session := range s.sessions {
 		log.Printf("SharedVoiceClient[%s]: Checking session %s (callsign=%s, module=%s)",
 			s.module, sessionID, session.Callsign, session.Module)
+
+		// Skip if this is a web client's own audio echoed back from reflector
+		// Web audio should never come back from the reflector
+		if msg.Source == "web" && session.Callsign == msg.Callsign {
+			log.Printf("SharedVoiceClient[%s]: Skipping session %s - web audio echo from reflector (callsign=%s)",
+				s.module, sessionID, msg.Callsign)
+			continue
+		}
 
 		// Only forward if session is listening to this module and not the sender
 		if session.Module == msg.Module && session.Callsign != msg.Callsign {
@@ -248,14 +296,24 @@ func (s *SharedVoiceClient) BroadcastStateToSessions(msg VoiceMessage) {
 	}
 }
 
-// SendPTTStart forwards PTT start to reflector
+// SendPTTStart forwards PTT start to reflector (DEPRECATED: use SendPTTStartWithAck)
 func (s *SharedVoiceClient) SendPTTStart(module, callsign string) error {
 	return s.client.SendPTTStart(module, callsign)
 }
 
-// SendPTTStop forwards PTT stop to reflector
+// SendPTTStartWithAck sends PTT start via control socket and waits for ACK/NACK
+func (s *SharedVoiceClient) SendPTTStartWithAck(module, callsign, sessionID string) (*ControlResponse, error) {
+	return s.client.SendPTTStartWithAck(module, callsign, sessionID)
+}
+
+// SendPTTStop forwards PTT stop to reflector (DEPRECATED: use SendPTTStopWithAck)
 func (s *SharedVoiceClient) SendPTTStop(module, callsign string) error {
 	return s.client.SendPTTStop(module, callsign)
+}
+
+// SendPTTStopWithAck sends PTT stop via control socket and waits for ACK/NACK
+func (s *SharedVoiceClient) SendPTTStopWithAck(module, callsign string) (*ControlResponse, error) {
+	return s.client.SendPTTStopWithAck(module, callsign)
 }
 
 // SendAudioData forwards audio data to reflector
@@ -264,8 +322,8 @@ func (s *SharedVoiceClient) SendAudioData(module, callsign string, opusData []by
 }
 
 // SendSessionStart forwards session start to reflector
-func (s *SharedVoiceClient) SendSessionStart(module, callsign string) error {
-	return s.client.SendSessionStart(module, callsign)
+func (s *SharedVoiceClient) SendSessionStart(module, callsign, sessionID string) error {
+	return s.client.SendSessionStart(module, callsign, sessionID)
 }
 
 // SendSessionStop forwards session stop to reflector
@@ -330,16 +388,17 @@ func (s *SharedVoiceClient) ReleasePTT(sessionID, callsign string) {
 
 // BroadcastPeerAudio broadcasts audio from one session to all other sessions on the same module
 // This is for real-time peer-to-peer audio (browser to browser) without going through urfd
-func (s *SharedVoiceClient) BroadcastPeerAudio(opusData []byte, fromSessionID, fromCallsign, module string) {
+func (s *SharedVoiceClient) BroadcastPeerAudio(opusData []byte, fromSessionID, fromCallsign, fromClientSessionID, module string) {
 	s.sessionsMu.RLock()
 	defer s.sessionsMu.RUnlock()
 
-	log.Printf("SharedVoiceClient[%s]: Broadcasting peer audio from %s to %d sessions", s.module, fromCallsign, len(s.sessions))
+	log.Printf("SharedVoiceClient[%s]: Broadcasting peer audio from %s (clientSession=%s) to %d sessions",
+		s.module, fromCallsign, fromClientSessionID, len(s.sessions))
 
 	// Broadcast to all sessions except the sender
 	broadcastCount := 0
 	for sessionID, session := range s.sessions {
-		// Skip if this is the sender
+		// Skip if this is the sender (by server session ID)
 		if sessionID == fromSessionID {
 			continue
 		}
@@ -349,8 +408,8 @@ func (s *SharedVoiceClient) BroadcastPeerAudio(opusData []byte, fromSessionID, f
 			continue
 		}
 
-		// Send audio to this peer
-		if err := session.SendAudioFromPeer(opusData, fromCallsign); err != nil {
+		// Send audio to this peer with the sender's client session ID
+		if err := session.SendAudioFromPeer(opusData, fromCallsign, fromClientSessionID); err != nil {
 			log.Printf("SharedVoiceClient[%s]: Failed to send peer audio to session %s: %v", s.module, sessionID, err)
 			// Continue trying to send to other sessions
 		} else {
@@ -359,4 +418,48 @@ func (s *SharedVoiceClient) BroadcastPeerAudio(opusData []byte, fromSessionID, f
 	}
 
 	log.Printf("SharedVoiceClient[%s]: Broadcast peer audio from %s to %d peers on module %s", s.module, fromCallsign, broadcastCount, module)
+}
+
+// NotifyPeerTransmissionEnd notifies all receiving sessions that peer transmission has ended
+// This allows them to transition from rx_busy back to listening state
+func (s *SharedVoiceClient) NotifyPeerTransmissionEnd(fromSessionID, fromCallsign, module string) {
+	s.sessionsMu.RLock()
+	defer s.sessionsMu.RUnlock()
+
+	log.Printf("SharedVoiceClient[%s]: Notifying peers that %s transmission ended", s.module, fromCallsign)
+
+	// Notify all sessions except the sender
+	for sessionID, session := range s.sessions {
+		// Skip if this is the sender
+		if sessionID == fromSessionID {
+			continue
+		}
+
+		// Skip if session is on a different module
+		if session.Module != module {
+			continue
+		}
+
+		// Notify session to return to listening state if in rx_busy
+		if err := session.ClearPeerRxBusy(); err != nil {
+			log.Printf("SharedVoiceClient[%s]: Failed to clear rx_busy for session %s: %v", s.module, sessionID, err)
+		}
+	}
+}
+
+// HandleRecordingComplete processes recording completion notifications from urfd
+// This is called when urfd finishes recording a transmission and has saved the audio file
+func (s *SharedVoiceClient) HandleRecordingComplete(msg VoiceMessage) {
+	log.Printf("SharedVoiceClient[%s]: Recording complete for %s: %s", s.module, msg.Callsign, msg.AudioFile)
+
+	// Forward to all sessions for the callsign/module
+	s.sessionsMu.RLock()
+	defer s.sessionsMu.RUnlock()
+
+	for _, session := range s.sessions {
+		// Match by callsign and module
+		if session.Callsign == msg.Callsign && session.Module == msg.Module {
+			session.HandleRecordingComplete(msg.AudioFile)
+		}
+	}
 }
