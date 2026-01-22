@@ -99,6 +99,11 @@ export const useVoiceStore = defineStore('voice', () => {
     passwordRequired.value = required
   }
 
+  const clearPassword = () => {
+    password.value = null
+    sessionStorage.removeItem('voice_password')
+  }
+
   const loadFromStorage = () => {
     // Load persisted callsign and module
     const savedCallsign = localStorage.getItem('voice_callsign')
@@ -125,6 +130,9 @@ export const useVoiceStore = defineStore('voice', () => {
     lastError.value = null
     password.value = null
     passwordRequired.value = false
+    
+    // Clear stored password from sessionStorage
+    sessionStorage.removeItem('voice_password')
   }
 
   return {
@@ -149,6 +157,7 @@ export const useVoiceStore = defineStore('voice', () => {
     setEnabled,
     setPassword,
     setPasswordRequired,
+    clearPassword,
     loadFromStorage,
     reset
   }
