@@ -302,7 +302,7 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
     </div>
 
     <!-- Clear Password Button (only show if password is saved) -->
-    <div v-if="voiceStore.password && voiceStore.passwordRequired" class="flex flex-col gap-1">
+    <div v-if="voiceStore.password" class="flex flex-col gap-1">
       <button
         @click="handleClearPassword"
         class="w-full px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-md transition-colors border border-gray-300 dark:border-gray-600"
