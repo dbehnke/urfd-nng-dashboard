@@ -470,7 +470,7 @@ const initOpusEncoder = async () => {
       encoderSampleRate: 8000,
       encoderApplication: 2048, // VOIP application  
       streamPages: true, // Use Ogg container for compatibility
-      maxFramesPerPage: 1, // Send immediately (1 frame = 20ms, well below 80ms AllStar timeout)
+      maxFramesPerPage: 1 as any, // Send immediately (1 frame = 20ms, well below 80ms AllStar timeout) - not in TS types but supported
       numberOfChannels: 1,
       encoderComplexity: 10,
       encoderBitRate: 12000, // 12kbps as per spec
