@@ -374,6 +374,73 @@ const requestMicPermission = async (): Promise<boolean> => {
   }
 }
 
+// Extract raw Opus packets from Ogg container
+// Ogg page parser - uses segment table to split packets correctly
+const extractOpusFromOgg = (oggData: Uint8Array): Uint8Array[] => {
+  const packets: Uint8Array[] = []
+  let offset = 0
+  
+  while (offset < oggData.length) {
+    // Check for "OggS" magic number
+    if (offset + 27 > oggData.length) break
+    if (oggData[offset] !== 0x4F || oggData[offset + 1] !== 0x67 || 
+        oggData[offset + 2] !== 0x67 || oggData[offset + 3] !== 0x53) {
+      console.warn('[VoiceEngine] Invalid Ogg page at offset', offset)
+      break
+    }
+    
+    // Read number of page segments (at offset 26)
+    const numSegments = oggData[offset + 26]
+    if (!numSegments || offset + 27 + numSegments > oggData.length) break
+    
+    // Read segment table - each segment describes packet boundaries
+    const segmentTable = []
+    for (let i = 0; i < numSegments; i++) {
+      const segmentSize = oggData[offset + 27 + i]
+      if (segmentSize === undefined) break
+      segmentTable.push(segmentSize)
+    }
+    
+    // Extract the payload (skip header + segment table)
+    const payloadStart = offset + 27 + numSegments
+    const totalPayloadSize = segmentTable.reduce((sum, size) => sum + size, 0)
+    if (payloadStart + totalPayloadSize > oggData.length) break
+    
+    // Use segment table to split payload into individual packets
+    let payloadOffset = payloadStart
+    let currentPacket: number[] = []
+    
+    for (const segmentSize of segmentTable) {
+      // Add this segment to current packet
+      const segment = oggData.slice(payloadOffset, payloadOffset + segmentSize)
+      currentPacket.push(...segment)
+      payloadOffset += segmentSize
+      
+      // If segment is < 255, packet is complete
+      if (segmentSize < 255) {
+        const packetData = new Uint8Array(currentPacket)
+        
+        // Skip OpusHead and OpusTags pages
+        if (packetData.length > 8) {
+          const header = String.fromCharCode(...Array.from(packetData.slice(0, 8)))
+          if (!header.startsWith('OpusHead') && !header.startsWith('OpusTags')) {
+            // This is actual audio data
+            packets.push(packetData)
+          }
+        }
+        
+        // Start new packet
+        currentPacket = []
+      }
+    }
+    
+    // Move to next page
+    offset = payloadStart + totalPayloadSize
+  }
+  
+  return packets
+}
+
 // Initialize Opus encoder for transmit
 const initOpusEncoder = async () => {
   try {
@@ -396,13 +463,14 @@ const initOpusEncoder = async () => {
     }
 
     // Create Opus recorder
-    // Using raw Opus frames (no Ogg container) for real-time transmission
-    // This ensures packets are sent immediately without batching
+    // Using Ogg container with minimal batching for real-time transmission
+    // maxFramesPerPage=1 ensures each 20ms frame is sent immediately
     opusEncoder.value = new Recorder({
       encoderPath: '/opus-recorder/encoderWorker.min.js',
       encoderSampleRate: 8000,
       encoderApplication: 2048, // VOIP application  
-      streamPages: false, // Raw Opus frames, no Ogg container (for real-time)
+      streamPages: true, // Use Ogg container for compatibility
+      maxFramesPerPage: 1, // Send immediately (1 frame = 20ms, well below 80ms AllStar timeout)
       numberOfChannels: 1,
       encoderComplexity: 10,
       encoderBitRate: 12000, // 12kbps as per spec
@@ -410,11 +478,15 @@ const initOpusEncoder = async () => {
       sourceNode: mediaStream.value
     })
 
-    // Handle encoded data - raw Opus frames sent directly
+    // Handle encoded data - extract raw Opus packets from Ogg pages
     opusEncoder.value.ondataavailable = (typedArray: Uint8Array) => {
-      console.log('[VoiceEngine] Raw Opus frame received, size:', typedArray.length, 'bytes')
-      // Send raw Opus frame directly (no extraction needed)
-      sendAudioData(typedArray)
+      console.log('[VoiceEngine] Ogg page received, size:', typedArray.length, 'bytes')
+      // Extract Opus packets from Ogg container
+      const opusPackets = extractOpusFromOgg(typedArray)
+      for (const packet of opusPackets) {
+        console.log('[VoiceEngine] Extracted Opus packet, size:', packet.length, 'bytes')
+        sendAudioData(packet)
+      }
     }
 
     console.log('Opus encoder initialized')
