@@ -40,6 +40,7 @@ type LoggingConfig struct {
 	MaxAgeDays int    `mapstructure:"max_age_days"`
 	Compress   bool   `mapstructure:"compress"`
 	Console    bool   `mapstructure:"console"`
+	SQL        bool   `mapstructure:"sql"`
 }
 
 type AudioConfig struct {
@@ -68,6 +69,7 @@ func LoadConfig(path string) (*Config, error) {
 	v.SetDefault("reflector.description", "Universal Reflector Dashboard")
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.console", true)
+	v.SetDefault("logging.sql", false)
 	v.SetDefault("voice.enable", false)
 	v.SetDefault("voice.reflector_addr", "tcp://127.0.0.1:5556")
 	v.SetDefault("voice.control_addr", "tcp://127.0.0.1:6556")

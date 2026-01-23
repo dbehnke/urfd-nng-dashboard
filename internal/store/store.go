@@ -14,14 +14,19 @@ type Store struct {
 	DB *gorm.DB
 }
 
-func NewStore(dbPath string) (*Store, error) {
+func NewStore(dbPath string, enableSQLLogging bool) (*Store, error) {
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		return nil, err
 	}
 
+	logMode := logger.Silent
+	if enableSQLLogging {
+		logMode = logger.Info
+	}
+
 	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: logger.Default.LogMode(logMode),
 	})
 	if err != nil {
 		return nil, err

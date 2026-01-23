@@ -11,7 +11,7 @@ func TestStore(t *testing.T) {
 	defer func() { _ = os.Remove(dbPath + "-shm") }()
 	defer func() { _ = os.Remove(dbPath + "-wal") }()
 
-	s, err := NewStore(dbPath)
+	s, err := NewStore(dbPath, false)
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}

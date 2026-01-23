@@ -64,7 +64,7 @@ func main() {
 	)
 
 	// 3. Initialize Store
-	s, err := store.NewStore(cfg.Server.DBPath)
+	s, err := store.NewStore(cfg.Server.DBPath, cfg.Logging.SQL)
 	if err != nil {
 		logger.Log.Fatal("Failed to initialize store", zap.Error(err))
 	}
