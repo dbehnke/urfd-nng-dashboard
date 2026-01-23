@@ -466,12 +466,13 @@ const initOpusEncoder = async () => {
     }
 
     // Create Opus recorder
-    // Using streamPages: true (Ogg format) then extracting raw Opus packets
+    // Using raw Opus frames (no Ogg container) for real-time transmission
+    // This ensures packets are sent immediately without batching
     opusEncoder.value = new Recorder({
       encoderPath: '/opus-recorder/encoderWorker.min.js',
       encoderSampleRate: 8000,
       encoderApplication: 2048, // VOIP application  
-      streamPages: true, // Use Ogg container, we'll extract Opus packets
+      streamPages: false, // Raw Opus frames, no Ogg container (for real-time)
       numberOfChannels: 1,
       encoderComplexity: 10,
       encoderBitRate: 12000, // 12kbps as per spec
@@ -479,15 +480,11 @@ const initOpusEncoder = async () => {
       sourceNode: mediaStream.value
     })
 
-    // Handle encoded data - extract raw Opus packets from Ogg pages
+    // Handle encoded data - raw Opus frames sent directly
     opusEncoder.value.ondataavailable = (typedArray: Uint8Array) => {
-      console.log('[VoiceEngine] Ogg page received, size:', typedArray.length, 'bytes')
-      // Extract Opus packets from Ogg container
-      const opusPackets = extractOpusFromOgg(typedArray)
-      for (const packet of opusPackets) {
-        console.log('[VoiceEngine] Extracted Opus packet, size:', packet.length, 'bytes')
-        sendAudioData(packet)
-      }
+      console.log('[VoiceEngine] Raw Opus frame received, size:', typedArray.length, 'bytes')
+      // Send raw Opus frame directly (no extraction needed)
+      sendAudioData(typedArray)
     }
 
     console.log('Opus encoder initialized')
