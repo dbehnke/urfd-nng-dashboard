@@ -465,18 +465,20 @@ const initOpusEncoder = async () => {
     // Create Opus recorder
     // Using Ogg container with minimal batching for real-time transmission
     // maxFramesPerPage=1 ensures each 20ms frame is sent immediately
-    opusEncoder.value = new Recorder({
+    // Extract config to bypass TypeScript checking for maxFramesPerPage (exists in opus-recorder but not in types)
+    const recorderConfig: any = {
       encoderPath: '/opus-recorder/encoderWorker.min.js',
       encoderSampleRate: 8000,
       encoderApplication: 2048, // VOIP application  
       streamPages: true, // Use Ogg container for compatibility
-      maxFramesPerPage: 1 as any, // Send immediately (1 frame = 20ms, well below 80ms AllStar timeout) - not in TS types but supported
+      maxFramesPerPage: 1, // Send immediately (1 frame = 20ms, well below 80ms AllStar timeout)
       numberOfChannels: 1,
       encoderComplexity: 10,
       encoderBitRate: 12000, // 12kbps as per spec
       encoderFrameSize: 20, // 20ms frames
       sourceNode: mediaStream.value
-    })
+    }
+    opusEncoder.value = new Recorder(recorderConfig)
 
     // Handle encoded data - extract raw Opus packets from Ogg pages
     opusEncoder.value.ondataavailable = (typedArray: Uint8Array) => {
