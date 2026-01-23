@@ -705,7 +705,8 @@ const connect = async () => {
             if (newState === 'transmitting' && oldState === 'ptt_requesting') {
               if (opusEncoder.value) {
                 console.log('[VoiceEngine] Server granted PTT, starting encoder')
-                opusEncoder.value.start()
+                // Start with 20ms timeSlice to match frame size and prevent AllStar 80ms timeout
+                opusEncoder.value.start(20)
                 
                 // Start transmit timer
                 transmitStartTime = Date.now()
