@@ -69,6 +69,16 @@ func main() {
 		logger.Log.Fatal("Failed to initialize store", zap.Error(err))
 	}
 
+	// Cleanup stale gain preferences on startup (>30 days old)
+	deleted, err := s.CleanupStaleGainPrefs()
+	if err != nil {
+		logger.Log.Warn("Failed to cleanup stale gain preferences", zap.Error(err))
+	} else if deleted > 0 {
+		logger.Log.Info("Cleaned up stale user gain preferences",
+			zap.Int64("deleted", deleted),
+			zap.String("reason", ">30 days old"))
+	}
+
 	// 4. Initialize Hub
 	hub := server.NewHub()
 	go hub.Run()
@@ -498,6 +508,86 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(book); err != nil {
 			logger.Log.Error("Failed to encode callbook response", zap.Error(err))
+		}
+	})
+
+	// GET /api/voice/gain/:callsign/:module - Get user's saved gain preference
+	http.HandleFunc("/api/voice/gain/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Parse URL: /api/voice/gain/KF8S/A
+		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/voice/gain/"), "/")
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			http.Error(w, "Invalid path format. Expected: /api/voice/gain/:callsign/:module", http.StatusBadRequest)
+			return
+		}
+
+		callsign := strings.ToUpper(strings.TrimSpace(parts[0]))
+		module := strings.ToUpper(strings.TrimSpace(parts[1]))
+
+		pref, err := s.GetUserGain(callsign, module)
+		if err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(pref); err != nil {
+			logger.Log.Error("Failed to encode gain preference response", zap.Error(err))
+		}
+	})
+
+	// POST /api/voice/gain - Save/update user's gain preference
+	http.HandleFunc("/api/voice/gain", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			Callsign string `json:"callsign"`
+			Module   string `json:"module"`
+			Gain     int    `json:"gain"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		// Validate
+		if req.Callsign == "" || req.Module == "" {
+			http.Error(w, "Missing callsign or module", http.StatusBadRequest)
+			return
+		}
+
+		if req.Gain < 0 || req.Gain > 1000 {
+			http.Error(w, "Gain must be 0-1000", http.StatusBadRequest)
+			return
+		}
+
+		callsign := strings.ToUpper(strings.TrimSpace(req.Callsign))
+		module := strings.ToUpper(strings.TrimSpace(req.Module))
+
+		if err := s.SaveUserGain(callsign, module, req.Gain); err != nil {
+			logger.Log.Error("Failed to save gain preference",
+				zap.String("callsign", callsign),
+				zap.String("module", module),
+				zap.Int("gain", req.Gain),
+				zap.Error(err))
+			http.Error(w, "Failed to save gain preference", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"gain":    req.Gain,
+		}); err != nil {
+			logger.Log.Error("Failed to encode gain save response", zap.Error(err))
 		}
 	})
 

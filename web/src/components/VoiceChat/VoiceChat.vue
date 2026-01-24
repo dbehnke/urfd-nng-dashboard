@@ -57,6 +57,15 @@ const transcodedModules = computed(() => {
   return modules.map((m: any) => m.Name)
 })
 
+// Color indicator for gain level
+const gainColor = computed(() => {
+  const gain = voiceStore.receiveGain
+  if (gain <= 150) return 'bg-green-500'
+  if (gain <= 400) return 'bg-yellow-500'
+  if (gain <= 700) return 'bg-orange-500'
+  return 'bg-red-500'
+})
+
 const stateDisplay = computed(() => {
   switch (voiceStore.state) {
     case 'listening':
@@ -336,9 +345,13 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
     <!-- Receive Gain Control -->
     <div v-if="voiceStore.callsign && voiceStore.selectedModule" class="flex flex-col gap-2 px-2">
       <div class="flex items-center justify-between">
-        <label for="rx-gain" class="text-sm font-medium text-gray-700 dark:text-gray-300">
-          Receive Volume: {{ voiceStore.receiveGain }}%
-        </label>
+        <div class="flex items-center gap-2">
+          <label for="rx-gain" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Receive Volume
+          </label>
+          <!-- Color indicator dot -->
+          <span :class="['w-2 h-2 rounded-full', gainColor]"></span>
+        </div>
         <div class="flex items-center gap-2">
           <input
             id="auto-gain"
@@ -356,19 +369,19 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
         id="rx-gain"
         type="range"
         min="0"
-        max="600"
-        step="5"
+        max="1000"
+        step="50"
         :value="voiceStore.receiveGain"
         :disabled="voiceStore.autoGainControl"
         @input="voiceStore.setReceiveGain(parseInt(($event.target as HTMLInputElement).value))"
         class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
       />
       <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-        <span>0%</span>
-        <span>100%</span>
-        <span>200%</span>
-        <span>400%</span>
-        <span>600%</span>
+        <span>|</span>
+        <span>|</span>
+        <span>|</span>
+        <span>|</span>
+        <span>|</span>
       </div>
     </div>
 

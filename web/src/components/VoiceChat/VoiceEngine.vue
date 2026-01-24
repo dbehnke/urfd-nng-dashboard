@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useVoiceStore } from '@/stores/voice'
+import { getUserGain, saveUserGain } from '@/services/voiceGainApi'
 
 // Props
 const props = defineProps<{
@@ -39,12 +40,18 @@ const rxLevel = ref(0)
 const txLevel = ref(0)
 let levelMonitorInterval: number | null = null
 
+// Current transmitter tracking for user gain memory
+const currentTransmitter = ref<{ callsign: string, module: string } | null>(null)
+
 // Automatic Gain Control (AGC)
 let agcInterval: number | null = null
-const agcTargetLevel = 50 // Target average peak level (0-100)
+const agcTargetLevel = 40 // Target average peak level (0-100), changed from 50 to 40
+const agcMinGain = 50 // Don't reduce below 50%
+const agcMaxGain = 1000 // Allow up to 10x amplification
 const agcCheckInterval = 2000 // Check every 2 seconds
 const agcLevelHistory: number[] = [] // Track recent levels for averaging
 const agcHistorySize = 10 // Keep last 10 readings (20 seconds of data)
+const agcFastResponseThreshold = 20 // Trigger fast mode if level < this value
 
 // Audio playback scheduling for continuous playback
 let audioPlaybackTime = 0
@@ -596,7 +603,7 @@ const startAGC = () => {
     // Calculate average level from history
     const avgLevel = agcLevelHistory.reduce((sum, val) => sum + val, 0) / agcLevelHistory.length
     
-    // Calculate how far off we are from target (50)
+    // Calculate how far off we are from target
     const levelDiff = agcTargetLevel - avgLevel
     
     // Only adjust if difference is significant (more than 5 units)
@@ -605,36 +612,59 @@ const startAGC = () => {
     }
     
     // Calculate gain adjustment needed
-    // If avgLevel is too low, increase gain; if too high, decrease gain
     const currentGain = voiceStore.receiveGain
     let newGain = currentGain
     
-    if (avgLevel < agcTargetLevel) {
-      // Audio too quiet - increase gain
-      // Ratio: target/current * currentGain
+    // FAST RESPONSE MODE: Very quiet audio (level < 20) - boost aggressively
+    if (avgLevel < agcFastResponseThreshold) {
+      // Adaptive boost: quieter = bigger jumps (up to +300% per cycle)
+      const boost = Math.min(300, (agcTargetLevel / Math.max(avgLevel, 5)) * 150)
+      newGain = currentGain + boost
+      console.log(`[AGC] Fast boost mode: level=${avgLevel.toFixed(1)}, boost=+${boost.toFixed(0)}%`)
+    }
+    // FAST RESPONSE MODE: Too loud (level > 60) - reduce quickly
+    else if (avgLevel > 60) {
+      // Fast reduction: reduce by 40% per cycle
+      const reduction = currentGain * 0.4
+      newGain = currentGain - reduction
+      console.log(`[AGC] Fast reduction mode: level=${avgLevel.toFixed(1)}, reduction=-${reduction.toFixed(0)}%`)
+    }
+    // NORMAL MODE: Level in acceptable range (20-60) - gradual adjustment
+    else {
+      // Ratio-based adjustment
       const ratio = agcTargetLevel / Math.max(avgLevel, 1)
-      newGain = Math.min(600, currentGain * ratio)
-    } else {
-      // Audio too loud - decrease gain
-      const ratio = agcTargetLevel / avgLevel
-      newGain = Math.max(10, currentGain * ratio)
+      newGain = currentGain * ratio
+      
+      // Apply smoothing - don't jump too fast (max 20% change per adjustment)
+      const maxChange = currentGain * 0.2
+      if (newGain > currentGain + maxChange) {
+        newGain = currentGain + maxChange
+      } else if (newGain < currentGain - maxChange) {
+        newGain = currentGain - maxChange
+      }
     }
     
-    // Apply smoothing - don't jump too fast (max 20% change per adjustment)
-    const maxChange = currentGain * 0.2
-    if (newGain > currentGain + maxChange) {
-      newGain = currentGain + maxChange
-    } else if (newGain < currentGain - maxChange) {
-      newGain = currentGain - maxChange
-    }
+    // Round to nearest 50 (matches 20-notch slider)
+    newGain = Math.round(newGain / 50) * 50
     
-    // Round to nearest 5%
-    newGain = Math.round(newGain / 5) * 5
+    // Always respect limits: 50%-1000%
+    newGain = Math.max(agcMinGain, Math.min(agcMaxGain, newGain))
     
     // Update gain if it changed
     if (newGain !== currentGain) {
       console.log(`[AGC] Adjusting gain: ${currentGain}% → ${newGain}% (avg level: ${avgLevel.toFixed(1)}, target: ${agcTargetLevel})`)
       voiceStore.setReceiveGain(newGain)
+      
+      // Save to backend (fire and forget)
+      if (currentTransmitter.value) {
+        saveUserGain(
+          currentTransmitter.value.callsign,
+          currentTransmitter.value.module,
+          newGain
+        ).catch(err => {
+          console.warn('Failed to save user gain:', err)
+        })
+      }
     }
   }, agcCheckInterval)
   
@@ -780,6 +810,29 @@ const connect = async () => {
             if (!data.from_session_id && currentState.value === 'transmitting') {
               console.warn('[VoiceEngine] ⚠️ Skipping audio without session ID while transmitting (likely echo)')
               break
+            }
+            
+            // Load saved gain when new user transmits
+            const transmittingCallsign = data.from
+            const transmittingModule = props.module
+            
+            if (voiceStore.autoGainControl && transmittingCallsign &&
+                currentTransmitter.value?.callsign !== transmittingCallsign) {
+              
+              currentTransmitter.value = { 
+                callsign: transmittingCallsign, 
+                module: transmittingModule || ''
+              }
+              
+              // Load saved gain from backend (async but don't wait)
+              getUserGain(transmittingCallsign, transmittingModule || '').then(savedGain => {
+                if (savedGain !== null) {
+                  console.log(`[AGC] Loaded saved gain for ${transmittingCallsign}/${transmittingModule}: ${savedGain}%`)
+                  voiceStore.setReceiveGain(savedGain)
+                }
+              }).catch(err => {
+                console.warn('Failed to load user gain:', err)
+              })
             }
             
             isReceivingAudio.value = true
@@ -1131,6 +1184,9 @@ const checkAudioTimeout = () => {
     isReceivingAudio.value = false
     audioPlaybackTime = 0 // Reset playback time for next transmission
     
+    // Clear current transmitter
+    currentTransmitter.value = null
+    
     // Also clear rx_busy state if stuck
     if (currentState.value === 'rx_busy') {
       console.log('[VoiceEngine] Clearing stuck rx_busy state')
@@ -1350,12 +1406,12 @@ const sendAudioData = (opusData: Uint8Array) => {
   }
 }
 
-// Set receive gain (0-600%)
+// Set receive gain (0-1000%)
 const setReceiveGain = (gain: number) => {
   if (!rxGainNode.value) return
   
-  // Clamp to 0-600% range
-  const clampedGain = Math.max(0, Math.min(600, gain))
+  // Clamp to 0-1000% range
+  const clampedGain = Math.max(0, Math.min(1000, gain))
   
   // Update gain node (convert percentage to linear gain)
   rxGainNode.value.gain.value = clampedGain / 100

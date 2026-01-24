@@ -25,7 +25,7 @@ export const useVoiceStore = defineStore('voice', () => {
   const isEnabled = ref(false)
   const password = ref<string | null>(null)
   const passwordRequired = ref(false)
-  const receiveGain = ref<number>(100) // Receive audio gain: 0-600%, default 100%
+  const receiveGain = ref<number>(100) // Receive audio gain: 0-1000%, default 100%
   const autoGainControl = ref<boolean>(false) // Automatic gain control enabled
 
   // Computed
@@ -102,8 +102,8 @@ export const useVoiceStore = defineStore('voice', () => {
   }
 
   const setReceiveGain = (gain: number) => {
-    // Clamp gain to 0-600% range
-    const clampedGain = Math.max(0, Math.min(600, gain))
+    // Clamp gain to 0-1000% range
+    const clampedGain = Math.max(0, Math.min(1000, gain))
     receiveGain.value = clampedGain
     
     // Persist to localStorage
@@ -145,7 +145,7 @@ export const useVoiceStore = defineStore('voice', () => {
     if (savedGain) {
       const gain = parseInt(savedGain, 10)
       if (!isNaN(gain)) {
-        receiveGain.value = Math.max(0, Math.min(600, gain))
+        receiveGain.value = Math.max(0, Math.min(1000, gain))
       }
     }
     

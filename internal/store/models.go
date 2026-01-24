@@ -18,3 +18,15 @@ type Hearing struct {
 	Duration  float64 `json:"duration"`
 	AudioFile string  `json:"audio_file,omitempty"`
 }
+
+// UserGainPreference stores per-user, per-module receive gain settings
+type UserGainPreference struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	Callsign  string    `json:"callsign" gorm:"index:idx_callsign_module,unique"`
+	Module    string    `json:"module" gorm:"index:idx_callsign_module,unique"`
+	Gain      int       `json:"gain"`                    // 0-1000 (percentage)
+	LastHeard time.Time `json:"last_heard" gorm:"index"` // For cleanup queries
+}
