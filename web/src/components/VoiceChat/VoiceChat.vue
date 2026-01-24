@@ -335,23 +335,40 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
 
     <!-- Receive Gain Control -->
     <div v-if="voiceStore.callsign && voiceStore.selectedModule" class="flex flex-col gap-2 px-2">
-      <label for="rx-gain" class="text-sm font-medium text-gray-700 dark:text-gray-300">
-        Receive Volume: {{ voiceStore.receiveGain }}%
-      </label>
+      <div class="flex items-center justify-between">
+        <label for="rx-gain" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+          Receive Volume: {{ voiceStore.receiveGain }}%
+        </label>
+        <div class="flex items-center gap-2">
+          <input
+            id="auto-gain"
+            type="checkbox"
+            :checked="voiceStore.autoGainControl"
+            @change="voiceStore.setAutoGainControl(($event.target as HTMLInputElement).checked)"
+            class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+          />
+          <label for="auto-gain" class="text-xs text-gray-600 dark:text-gray-400 cursor-pointer">
+            Auto
+          </label>
+        </div>
+      </div>
       <input
         id="rx-gain"
         type="range"
         min="0"
-        max="200"
+        max="600"
         step="5"
         :value="voiceStore.receiveGain"
+        :disabled="voiceStore.autoGainControl"
         @input="voiceStore.setReceiveGain(parseInt(($event.target as HTMLInputElement).value))"
-        class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+        class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
       />
       <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400">
         <span>0%</span>
         <span>100%</span>
         <span>200%</span>
+        <span>400%</span>
+        <span>600%</span>
       </div>
     </div>
 

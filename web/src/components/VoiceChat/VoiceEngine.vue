@@ -39,6 +39,13 @@ const rxLevel = ref(0)
 const txLevel = ref(0)
 let levelMonitorInterval: number | null = null
 
+// Automatic Gain Control (AGC)
+let agcInterval: number | null = null
+const agcTargetLevel = 50 // Target average peak level (0-100)
+const agcCheckInterval = 2000 // Check every 2 seconds
+const agcLevelHistory: number[] = [] // Track recent levels for averaging
+const agcHistorySize = 10 // Keep last 10 readings (20 seconds of data)
+
 // Audio playback scheduling for continuous playback
 let audioPlaybackTime = 0
 let lastAudioReceiveTime = 0
@@ -563,6 +570,87 @@ const getAudioLevel = (analyser: AnalyserNode): number => {
   return (rms / 255) * 100
 }
 
+// Start Automatic Gain Control (AGC)
+const startAGC = () => {
+  if (agcInterval) return
+  
+  agcInterval = window.setInterval(() => {
+    // Only adjust if AGC is enabled and we're receiving audio
+    if (!voiceStore.autoGainControl || !isReceivingAudio.value || rxLevel.value === 0) {
+      return
+    }
+    
+    // Add current level to history
+    agcLevelHistory.push(rxLevel.value)
+    
+    // Keep history size limited
+    if (agcLevelHistory.length > agcHistorySize) {
+      agcLevelHistory.shift()
+    }
+    
+    // Need at least 3 samples before adjusting
+    if (agcLevelHistory.length < 3) {
+      return
+    }
+    
+    // Calculate average level from history
+    const avgLevel = agcLevelHistory.reduce((sum, val) => sum + val, 0) / agcLevelHistory.length
+    
+    // Calculate how far off we are from target (50)
+    const levelDiff = agcTargetLevel - avgLevel
+    
+    // Only adjust if difference is significant (more than 5 units)
+    if (Math.abs(levelDiff) < 5) {
+      return
+    }
+    
+    // Calculate gain adjustment needed
+    // If avgLevel is too low, increase gain; if too high, decrease gain
+    const currentGain = voiceStore.receiveGain
+    let newGain = currentGain
+    
+    if (avgLevel < agcTargetLevel) {
+      // Audio too quiet - increase gain
+      // Ratio: target/current * currentGain
+      const ratio = agcTargetLevel / Math.max(avgLevel, 1)
+      newGain = Math.min(600, currentGain * ratio)
+    } else {
+      // Audio too loud - decrease gain
+      const ratio = agcTargetLevel / avgLevel
+      newGain = Math.max(10, currentGain * ratio)
+    }
+    
+    // Apply smoothing - don't jump too fast (max 20% change per adjustment)
+    const maxChange = currentGain * 0.2
+    if (newGain > currentGain + maxChange) {
+      newGain = currentGain + maxChange
+    } else if (newGain < currentGain - maxChange) {
+      newGain = currentGain - maxChange
+    }
+    
+    // Round to nearest 5%
+    newGain = Math.round(newGain / 5) * 5
+    
+    // Update gain if it changed
+    if (newGain !== currentGain) {
+      console.log(`[AGC] Adjusting gain: ${currentGain}% → ${newGain}% (avg level: ${avgLevel.toFixed(1)}, target: ${agcTargetLevel})`)
+      voiceStore.setReceiveGain(newGain)
+    }
+  }, agcCheckInterval)
+  
+  console.log('[AGC] Started automatic gain control')
+}
+
+// Stop Automatic Gain Control (AGC)
+const stopAGC = () => {
+  if (agcInterval) {
+    clearInterval(agcInterval)
+    agcInterval = null
+    agcLevelHistory.length = 0 // Clear history
+    console.log('[AGC] Stopped automatic gain control')
+  }
+}
+
 // Connect to WebSocket
 const connect = async () => {
   if (!props.module || !props.callsign) {
@@ -615,6 +703,9 @@ const connect = async () => {
       
       // Request Wake Lock to keep screen on
       requestWakeLock()
+      
+      // Start AGC monitoring
+      startAGC()
       
       // Send voice_start message with session ID
       const startMsg = {
@@ -888,6 +979,9 @@ const disconnect = () => {
     clearTimeout(audioTimeoutHandle)
     audioTimeoutHandle = null
   }
+  
+  // Stop AGC
+  stopAGC()
   
   if (ws.value) {
     // Send voice_stop message
@@ -1256,12 +1350,12 @@ const sendAudioData = (opusData: Uint8Array) => {
   }
 }
 
-// Set receive gain (0-200%)
+// Set receive gain (0-600%)
 const setReceiveGain = (gain: number) => {
   if (!rxGainNode.value) return
   
-  // Clamp to 0-200% range
-  const clampedGain = Math.max(0, Math.min(200, gain))
+  // Clamp to 0-600% range
+  const clampedGain = Math.max(0, Math.min(600, gain))
   
   // Update gain node (convert percentage to linear gain)
   rxGainNode.value.gain.value = clampedGain / 100

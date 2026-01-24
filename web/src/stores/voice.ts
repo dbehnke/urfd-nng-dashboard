@@ -25,7 +25,8 @@ export const useVoiceStore = defineStore('voice', () => {
   const isEnabled = ref(false)
   const password = ref<string | null>(null)
   const passwordRequired = ref(false)
-  const receiveGain = ref<number>(100) // Receive audio gain: 0-200%, default 100%
+  const receiveGain = ref<number>(100) // Receive audio gain: 0-600%, default 100%
+  const autoGainControl = ref<boolean>(false) // Automatic gain control enabled
 
   // Computed
   const canTransmit = computed(() => {
@@ -101,12 +102,19 @@ export const useVoiceStore = defineStore('voice', () => {
   }
 
   const setReceiveGain = (gain: number) => {
-    // Clamp gain to 0-200% range
-    const clampedGain = Math.max(0, Math.min(200, gain))
+    // Clamp gain to 0-600% range
+    const clampedGain = Math.max(0, Math.min(600, gain))
     receiveGain.value = clampedGain
     
     // Persist to localStorage
     localStorage.setItem('voice_receive_gain', clampedGain.toString())
+  }
+
+  const setAutoGainControl = (enabled: boolean) => {
+    autoGainControl.value = enabled
+    
+    // Persist to localStorage
+    localStorage.setItem('voice_auto_gain', enabled.toString())
   }
 
   const clearPassword = () => {
@@ -120,6 +128,7 @@ export const useVoiceStore = defineStore('voice', () => {
     const savedModule = localStorage.getItem('voice_module')
     const savedPassword = sessionStorage.getItem('voice_password')
     const savedGain = localStorage.getItem('voice_receive_gain')
+    const savedAutoGain = localStorage.getItem('voice_auto_gain')
     
     if (savedCallsign) {
       callsign.value = savedCallsign
@@ -136,8 +145,12 @@ export const useVoiceStore = defineStore('voice', () => {
     if (savedGain) {
       const gain = parseInt(savedGain, 10)
       if (!isNaN(gain)) {
-        receiveGain.value = Math.max(0, Math.min(200, gain))
+        receiveGain.value = Math.max(0, Math.min(600, gain))
       }
+    }
+    
+    if (savedAutoGain) {
+      autoGainControl.value = savedAutoGain === 'true'
     }
   }
 
@@ -163,6 +176,7 @@ export const useVoiceStore = defineStore('voice', () => {
     password,
     passwordRequired,
     receiveGain,
+    autoGainControl,
     
     // Computed
     canTransmit,
@@ -177,6 +191,7 @@ export const useVoiceStore = defineStore('voice', () => {
     setPassword,
     setPasswordRequired,
     setReceiveGain,
+    setAutoGainControl,
     clearPassword,
     loadFromStorage,
     reset
