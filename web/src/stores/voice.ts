@@ -25,6 +25,7 @@ export const useVoiceStore = defineStore('voice', () => {
   const isEnabled = ref(false)
   const password = ref<string | null>(null)
   const passwordRequired = ref(false)
+  const receiveGain = ref<number>(100) // Receive audio gain: 0-200%, default 100%
 
   // Computed
   const canTransmit = computed(() => {
@@ -99,6 +100,15 @@ export const useVoiceStore = defineStore('voice', () => {
     passwordRequired.value = required
   }
 
+  const setReceiveGain = (gain: number) => {
+    // Clamp gain to 0-200% range
+    const clampedGain = Math.max(0, Math.min(200, gain))
+    receiveGain.value = clampedGain
+    
+    // Persist to localStorage
+    localStorage.setItem('voice_receive_gain', clampedGain.toString())
+  }
+
   const clearPassword = () => {
     password.value = null
     sessionStorage.removeItem('voice_password')
@@ -109,6 +119,7 @@ export const useVoiceStore = defineStore('voice', () => {
     const savedCallsign = localStorage.getItem('voice_callsign')
     const savedModule = localStorage.getItem('voice_module')
     const savedPassword = sessionStorage.getItem('voice_password')
+    const savedGain = localStorage.getItem('voice_receive_gain')
     
     if (savedCallsign) {
       callsign.value = savedCallsign
@@ -120,6 +131,13 @@ export const useVoiceStore = defineStore('voice', () => {
     
     if (savedPassword) {
       password.value = savedPassword
+    }
+    
+    if (savedGain) {
+      const gain = parseInt(savedGain, 10)
+      if (!isNaN(gain)) {
+        receiveGain.value = Math.max(0, Math.min(200, gain))
+      }
     }
   }
 
@@ -144,6 +162,7 @@ export const useVoiceStore = defineStore('voice', () => {
     isEnabled,
     password,
     passwordRequired,
+    receiveGain,
     
     // Computed
     canTransmit,
@@ -157,6 +176,7 @@ export const useVoiceStore = defineStore('voice', () => {
     setEnabled,
     setPassword,
     setPasswordRequired,
+    setReceiveGain,
     clearPassword,
     loadFromStorage,
     reset

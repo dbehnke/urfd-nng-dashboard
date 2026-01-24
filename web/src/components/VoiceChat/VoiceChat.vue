@@ -209,6 +209,13 @@ onMounted(() => {
   callsignInput.value = voiceStore.callsign
 })
 
+// Update gain in voice engine when store value changes
+watch(() => voiceStore.receiveGain, (newGain) => {
+  if (voiceEngine.value && voiceEngine.value.setReceiveGain) {
+    voiceEngine.value.setReceiveGain(newGain)
+  }
+})
+
 onUnmounted(() => {
   // Clean up countdown interval
   stopCountdown()
@@ -324,6 +331,28 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
         :level="voiceEngine?.txLevel || 0" 
         label="TX"
       />
+    </div>
+
+    <!-- Receive Gain Control -->
+    <div v-if="voiceStore.callsign && voiceStore.selectedModule" class="flex flex-col gap-2 px-2">
+      <label for="rx-gain" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+        Receive Volume: {{ voiceStore.receiveGain }}%
+      </label>
+      <input
+        id="rx-gain"
+        type="range"
+        min="0"
+        max="200"
+        step="5"
+        :value="voiceStore.receiveGain"
+        @input="voiceStore.setReceiveGain(parseInt(($event.target as HTMLInputElement).value))"
+        class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+      />
+      <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+        <span>0%</span>
+        <span>100%</span>
+        <span>200%</span>
+      </div>
     </div>
 
     <!-- Data Usage Indicator -->

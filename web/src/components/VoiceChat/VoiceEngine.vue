@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useVoiceStore } from '@/stores/voice'
 
 // Props
 const props = defineProps<{
@@ -16,6 +17,7 @@ const emit = defineEmits<{
 }>()
 
 // State
+const voiceStore = useVoiceStore()
 const ws = ref<WebSocket | null>(null)
 const sessionId = ref<string>('') // Our session ID for echo prevention
 const audioContext = ref<AudioContext | null>(null)
@@ -31,6 +33,7 @@ const isReceivingAudio = ref(false)
 
 // Audio level monitoring
 const rxAnalyser = ref<AnalyserNode | null>(null)
+const rxGainNode = ref<GainNode | null>(null) // User-adjustable gain control
 const txAnalyser = ref<AnalyserNode | null>(null)
 const rxLevel = ref(0)
 const txLevel = ref(0)
@@ -293,6 +296,11 @@ const initAudio = async () => {
     rxAnalyser.value.fftSize = 256
     rxAnalyser.value.smoothingTimeConstant = 0.8
     
+    // Create gain node for user-adjustable receive volume
+    // Default: 100% = 1.0 gain (no change)
+    rxGainNode.value = audioContext.value.createGain()
+    rxGainNode.value.gain.value = voiceStore.receiveGain / 100
+    
     // Initialize Opus decoder (dynamically import)
     const { OpusDecoder } = await import('opus-decoder')
     opusDecoder.value = new OpusDecoder({
@@ -311,12 +319,14 @@ const initAudio = async () => {
     
     logDiagnostic('audio_init_success', {
       sampleRate: audioContext.value.sampleRate,
-      state: audioContext.value.state
+      state: audioContext.value.state,
+      receiveGain: voiceStore.receiveGain
     })
     
     console.log('Audio engine initialized', {
       sampleRate: audioContext.value.sampleRate,
-      state: audioContext.value.state
+      state: audioContext.value.state,
+      receiveGain: voiceStore.receiveGain
     })
   } catch (error) {
     logDiagnostic('audio_init_error', { error: String(error) })
@@ -954,6 +964,11 @@ const playAudio = (pcmData: Float32Array) => {
       audioPlaybackTime = currentTime
     }
     
+    // Update gain from voice store (allows dynamic gain adjustment)
+    if (rxGainNode.value) {
+      rxGainNode.value.gain.value = voiceStore.receiveGain / 100
+    }
+    
     // Create audio buffer
     const audioBuffer = audioContext.value.createBuffer(
       1, // mono
@@ -964,11 +979,16 @@ const playAudio = (pcmData: Float32Array) => {
     // Copy PCM data to buffer
     audioBuffer.getChannelData(0).set(pcmData)
     
-    // Create buffer source and connect through analyser for RX level monitoring
+    // Create buffer source and connect through gain node and analyser
+    // Audio chain: source -> gainNode -> analyser -> destination
     const source = audioContext.value.createBufferSource()
     source.buffer = audioBuffer
     
-    if (rxAnalyser.value) {
+    if (rxGainNode.value && rxAnalyser.value) {
+      source.connect(rxGainNode.value)
+      rxGainNode.value.connect(rxAnalyser.value)
+      rxAnalyser.value.connect(audioContext.value.destination)
+    } else if (rxAnalyser.value) {
       source.connect(rxAnalyser.value)
       rxAnalyser.value.connect(audioContext.value.destination)
     } else {
@@ -1232,6 +1252,19 @@ const sendAudioData = (opusData: Uint8Array) => {
   }
 }
 
+// Set receive gain (0-200%)
+const setReceiveGain = (gain: number) => {
+  if (!rxGainNode.value) return
+  
+  // Clamp to 0-200% range
+  const clampedGain = Math.max(0, Math.min(200, gain))
+  
+  // Update gain node (convert percentage to linear gain)
+  rxGainNode.value.gain.value = clampedGain / 100
+  
+  console.log(`[VoiceEngine] Receive gain set to ${clampedGain}% (${rxGainNode.value.gain.value.toFixed(2)}x)`)
+}
+
 // Lifecycle hooks
 onMounted(async () => {
   await initAudio()
@@ -1316,6 +1349,7 @@ defineExpose({
   isReceivingAudio,
   rxLevel,
   txLevel,
+  setReceiveGain,
   getDiagnosticLog,
   diagnosticLog,
   activeTalker,
