@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.8.0](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.7.0...v1.8.0) (2026-01-24)
+
+
+### Features
+
+* add diagnostic logging and improved error tracking ([285e386](https://github.com/dbehnke/urfd-nng-dashboard/commit/285e3866f79fc307315ffee6dff9b0d9d3b69950))
+* add RX/TX audio level meters to voice chat UI ([b005874](https://github.com/dbehnke/urfd-nng-dashboard/commit/b005874954d6d58e88b4ce31a49bd3c38d12b98f))
+* add session timeout enforcement for transmit ([f12bea9](https://github.com/dbehnke/urfd-nng-dashboard/commit/f12bea9cb097e4a99f146a3a355ef0190ce546cd))
+* add UI button to clear saved transmit password ([7d4fdff](https://github.com/dbehnke/urfd-nng-dashboard/commit/7d4fdff5e0a9fa11b2b4fbdc759c376524e410a4))
+* add WebSocket connection recovery with exponential backoff ([4697f49](https://github.com/dbehnke/urfd-nng-dashboard/commit/4697f4979bad9621ebc60903352494d1d40dc82a))
+* complete voice multiplexing and PTT state management ([52b252a](https://github.com/dbehnke/urfd-nng-dashboard/commit/52b252afec613ca70c4f7ec931dd0df0ddb7061b))
+* implement half-duplex logic and complete PTT audio transmission ([35814f6](https://github.com/dbehnke/urfd-nng-dashboard/commit/35814f6d01da6f322620f3360433d2a852e2b42f))
+* implement microphone permission handling and opus-recorder integration ([d5d7f02](https://github.com/dbehnke/urfd-nng-dashboard/commit/d5d7f02293ef3acd0a852c1be47d4575b1f3720f))
+* implement web voice transmission with Ogg Opus encoding and live dashboard updates ([c7b551b](https://github.com/dbehnke/urfd-nng-dashboard/commit/c7b551b5372ac06e10358899de1168fe0081911f))
+
+
+### Bug Fixes
+
+* add missing config.yaml ([6788692](https://github.com/dbehnke/urfd-nng-dashboard/commit/6788692f20d9ac8cb0bf9d9023cb0cf4ead157a8))
+* add path alias for @ in vite config ([ff76fe4](https://github.com/dbehnke/urfd-nng-dashboard/commit/ff76fe435fb456e20b91128a51b17f516960ccc4))
+* add WebSocket handler for real-time recording updates ([4c26656](https://github.com/dbehnke/urfd-nng-dashboard/commit/4c266560bd662d8f90b339c7c5ec519936444119))
+* correct libopus.js version to 0.0.1 ([e738d88](https://github.com/dbehnke/urfd-nng-dashboard/commit/e738d88441e4a2eed7ea90589421c44160f1b7bc))
+* correct NNG OptionRecvDeadline to use time.Duration(-1) for no timeout ([8ab3b29](https://github.com/dbehnke/urfd-nng-dashboard/commit/8ab3b29f3afd820e9b20cb7676245e02ab8b128a))
+* show clear password button whenever password is saved ([71f01e4](https://github.com/dbehnke/urfd-nng-dashboard/commit/71f01e41053f597014089914f4f63a8f578c5484))
+
 ## [1.7.0](https://github.com/dbehnke/urfd-nng-dashboard/compare/v1.6.1...v1.7.0) (2026-01-10)
 
 
