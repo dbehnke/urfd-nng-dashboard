@@ -596,9 +596,9 @@ const connect = async () => {
       isConnected.value = true
       reconnectAttempts.value = 0 // Reset reconnect counter on successful connection
       
-      // Start tracking data usage
-      sessionStartTime.value = Date.now()
+      // Reset data usage counters and start tracking
       resetDataUsage()
+      sessionStartTime.value = Date.now()
       
       logDiagnostic('ws_connected', { 
         module: props.module,
