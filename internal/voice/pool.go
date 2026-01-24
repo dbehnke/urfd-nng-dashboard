@@ -179,8 +179,10 @@ func (p *VoiceClientPool) getModuleURL(module string, baseURL string) (string, e
 		return "", fmt.Errorf("invalid port in base URL: %s", baseURL)
 	}
 
-	// Calculate module-specific port: base_port + (module - 'A')
-	moduleOffset := int(moduleChar - 'A')
+	// Calculate module-specific port: base_port + (module - 'A') * 3
+	// Module A=0, B=3, C=6, D=9, M=36, S=54, Z=75, etc.
+	// Examples: A=5556, D=5559 (+3), M=5568 (+12), S=5574 (+18), Z=5581 (+25)
+	moduleOffset := int(moduleChar-'A') * 3
 	modulePort := basePort + moduleOffset
 
 	// Construct the new URL
