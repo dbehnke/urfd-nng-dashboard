@@ -974,11 +974,12 @@ const playAudio = (pcmData: Float32Array) => {
       rxGainNode.value.gain.value = voiceStore.receiveGain / 100
     }
     
-    // Create audio buffer
+    // Create audio buffer at 8000 Hz (the actual sample rate of the PCM data)
+    // The browser will automatically resample to the AudioContext's sample rate during playback
     const audioBuffer = audioContext.value.createBuffer(
       1, // mono
       pcmData.length,
-      audioContext.value.sampleRate
+      8000 // Opus decoder output is always 8000 Hz
     )
     
     // Copy PCM data to buffer
