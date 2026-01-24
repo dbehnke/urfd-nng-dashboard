@@ -301,6 +301,11 @@ const initAudio = async () => {
     rxGainNode.value = audioContext.value.createGain()
     rxGainNode.value.gain.value = voiceStore.receiveGain / 100
     
+    // Connect the audio chain once during initialization
+    // Chain: [buffer sources] -> gainNode -> analyser -> destination
+    rxGainNode.value.connect(rxAnalyser.value)
+    rxAnalyser.value.connect(audioContext.value.destination)
+    
     // Initialize Opus decoder (dynamically import)
     const { OpusDecoder } = await import('opus-decoder')
     opusDecoder.value = new OpusDecoder({
@@ -979,18 +984,16 @@ const playAudio = (pcmData: Float32Array) => {
     // Copy PCM data to buffer
     audioBuffer.getChannelData(0).set(pcmData)
     
-    // Create buffer source and connect through gain node and analyser
-    // Audio chain: source -> gainNode -> analyser -> destination
+    // Create buffer source and connect to the audio chain
+    // Audio chain (connected once during init): source -> gainNode -> analyser -> destination
     const source = audioContext.value.createBufferSource()
     source.buffer = audioBuffer
     
-    if (rxGainNode.value && rxAnalyser.value) {
+    // Connect this buffer source to the gain node (or fallback to analyser/destination)
+    if (rxGainNode.value) {
       source.connect(rxGainNode.value)
-      rxGainNode.value.connect(rxAnalyser.value)
-      rxAnalyser.value.connect(audioContext.value.destination)
     } else if (rxAnalyser.value) {
       source.connect(rxAnalyser.value)
-      rxAnalyser.value.connect(audioContext.value.destination)
     } else {
       source.connect(audioContext.value.destination)
     }
