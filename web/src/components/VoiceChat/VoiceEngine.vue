@@ -53,6 +53,10 @@ const agcLevelHistory: number[] = [] // Track recent levels for averaging
 const agcHistorySize = 10 // Keep last 10 readings (20 seconds of data)
 const agcFastResponseThreshold = 20 // Trigger fast mode if level < this value
 
+// Idle gain reset - reset to 100% after 10 seconds of no audio
+let idleResetTimeout: number | null = null
+const idleResetDelay = 10000 // 10 seconds
+
 // Audio playback scheduling for continuous playback
 let audioPlaybackTime = 0
 let lastAudioReceiveTime = 0
@@ -175,7 +179,7 @@ const initMediaSession = () => {
   try {
     // Set metadata for lock screen / notification
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: 'URFD Voice Chat',
+      title: 'URFD Web Transceiver',
       artist: activeTalker.value ? `Listening to ${activeTalker.value}` : 'Ready to listen',
       album: `Module ${props.module || 'None'}`,
       artwork: [
@@ -812,6 +816,12 @@ const connect = async () => {
               break
             }
             
+            // Cancel idle reset timer - we're receiving audio again
+            if (idleResetTimeout) {
+              clearTimeout(idleResetTimeout)
+              idleResetTimeout = null
+            }
+            
             // Load saved gain when new user transmits
             const transmittingCallsign = data.from
             const transmittingModule = props.module
@@ -1033,6 +1043,12 @@ const disconnect = () => {
     audioTimeoutHandle = null
   }
   
+  // Clear idle reset timeout
+  if (idleResetTimeout) {
+    clearTimeout(idleResetTimeout)
+    idleResetTimeout = null
+  }
+  
   // Stop AGC
   stopAGC()
   
@@ -1186,6 +1202,17 @@ const checkAudioTimeout = () => {
     
     // Clear current transmitter
     currentTransmitter.value = null
+    
+    // Start idle reset timer - reset gain to 100% after 10 seconds of no audio
+    if (idleResetTimeout) {
+      clearTimeout(idleResetTimeout)
+    }
+    idleResetTimeout = window.setTimeout(() => {
+      if (!isReceivingAudio.value && voiceStore.autoGainControl) {
+        console.log('[VoiceEngine] Idle timeout - resetting gain to 100%')
+        voiceStore.setReceiveGain(100)
+      }
+    }, idleResetDelay)
     
     // Also clear rx_busy state if stuck
     if (currentState.value === 'rx_busy') {
@@ -1451,6 +1478,12 @@ onUnmounted(() => {
   if (audioTimeoutHandle) {
     clearTimeout(audioTimeoutHandle)
     audioTimeoutHandle = null
+  }
+  
+  // Clear idle reset timeout
+  if (idleResetTimeout) {
+    clearTimeout(idleResetTimeout)
+    idleResetTimeout = null
   }
   
   // Clear transmit timeout

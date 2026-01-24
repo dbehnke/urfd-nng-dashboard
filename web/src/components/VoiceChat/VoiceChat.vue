@@ -7,7 +7,7 @@ import PTTButton from './PTTButton.vue'
 import PasswordDialog from './PasswordDialog.vue'
 import AudioLevelMeter from './AudioLevelMeter.vue'
 import DataUsageIndicator from './DataUsageIndicator.vue'
-import { Radio, AlertCircle } from 'lucide-vue-next'
+import { Radio, AlertCircle, Lock, Unlock } from 'lucide-vue-next'
 
 // Stores
 const voiceStore = useVoiceStore()
@@ -57,13 +57,22 @@ const transcodedModules = computed(() => {
   return modules.map((m: any) => m.Name)
 })
 
-// Color indicator for gain level
+// Color indicator for gain level - centered at 100%
 const gainColor = computed(() => {
   const gain = voiceStore.receiveGain
-  if (gain <= 150) return 'bg-green-500'
-  if (gain <= 400) return 'bg-yellow-500'
-  if (gain <= 700) return 'bg-orange-500'
-  return 'bg-red-500'
+  // Center is green (75-125%)
+  if (gain >= 75 && gain <= 125) return 'bg-green-500'
+  // Left of center: blue gradient (below 75%)
+  if (gain < 75) {
+    if (gain < 25) return 'bg-blue-700' // Very low
+    if (gain < 50) return 'bg-blue-600' // Low
+    return 'bg-blue-500' // Slightly low
+  }
+  // Right of center: yellow/orange/red gradient (above 125%)
+  if (gain <= 250) return 'bg-yellow-500' // Slightly high
+  if (gain <= 500) return 'bg-orange-500' // High
+  if (gain <= 750) return 'bg-red-500' // Very high
+  return 'bg-red-700' // Extreme
 })
 
 const stateDisplay = computed(() => {
@@ -256,27 +265,27 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md">
+  <div class="flex flex-col gap-3 p-3 bg-white dark:bg-gray-800 rounded-lg shadow-md">
     <!-- Header -->
     <div class="flex items-center gap-2">
-      <Radio :size="20" class="text-blue-600" />
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Voice Chat</h3>
+      <Radio :size="18" class="text-blue-600" />
+      <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Web Transceiver</h3>
       <div class="ml-auto flex items-center gap-2">
-        <span :class="['text-sm font-medium', stateDisplay.color]">
+        <span :class="['text-xs font-medium', stateDisplay.color]">
           {{ stateDisplay.text }}
         </span>
       </div>
     </div>
 
     <!-- Error Display -->
-    <div v-if="voiceStore.lastError" class="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
-      <AlertCircle :size="18" class="text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-      <p class="text-sm text-red-800 dark:text-red-300">{{ voiceStore.lastError }}</p>
+    <div v-if="voiceStore.lastError" class="flex items-start gap-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
+      <AlertCircle :size="16" class="text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+      <p class="text-xs text-red-800 dark:text-red-300">{{ voiceStore.lastError }}</p>
     </div>
 
     <!-- Callsign Input -->
-    <div class="flex flex-col gap-2">
-      <label for="callsign" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+    <div class="flex flex-col gap-1.5">
+      <label for="callsign" class="text-xs font-medium text-gray-700 dark:text-gray-300">
         Your Callsign
       </label>
       <input
@@ -285,14 +294,14 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
         type="text"
         placeholder="KC1XXX"
         maxlength="10"
-        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        class="w-full px-2.5 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
         @keyup.enter="handleCallsignSubmit"
         :disabled="!voiceStore.isEnabled"
       />
       <button
         @click="handleCallsignSubmit"
         :disabled="!voiceStore.isEnabled || callsignInput.length < 3"
-        class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:dark:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors shadow-sm"
+        class="w-full px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:dark:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors shadow-sm"
       >
         Set Callsign
       </button>
@@ -300,7 +309,7 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
 
     <!-- Module Selector -->
     <div class="flex flex-col gap-1">
-      <label for="module" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+      <label for="module" class="text-xs font-medium text-gray-700 dark:text-gray-300">
         Module
       </label>
       <select
@@ -308,7 +317,7 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
         :value="voiceStore.selectedModule || ''"
         @change="handleModuleChange"
         :disabled="!voiceStore.isEnabled"
-        class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        class="px-2.5 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
       >
         <option value="">Select module...</option>
         <option v-for="module in transcodedModules" :key="module" :value="module">
@@ -317,21 +326,27 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
       </select>
     </div>
 
-    <!-- Clear Password Button (only show if password is saved) -->
-    <div v-if="voiceStore.password" class="flex flex-col gap-1">
+    <!-- Password Lock Icon (only show if module selected) -->
+    <div v-if="voiceStore.selectedModule" class="flex justify-center">
       <button
         @click="handleClearPassword"
-        class="w-full px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-md transition-colors border border-gray-300 dark:border-gray-600"
+        v-if="voiceStore.password"
+        class="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+        title="Password saved. Click to clear."
       >
-        🔓 Clear Saved Password
+        <Lock class="w-4 h-4 text-green-600 dark:text-green-500" />
       </button>
-      <p class="text-xs text-gray-500 dark:text-gray-400">
-        You have a password saved. Clear it to enter a new one on next transmission.
-      </p>
+      <div
+        v-else
+        class="p-1.5"
+        title="No password saved"
+      >
+        <Unlock class="w-4 h-4 text-gray-400 dark:text-gray-600" />
+      </div>
     </div>
 
     <!-- Audio Level Meters -->
-    <div v-if="voiceStore.callsign && voiceStore.selectedModule" class="flex flex-col gap-2 px-2">
+    <div v-if="voiceStore.callsign && voiceStore.selectedModule" class="flex flex-col gap-1.5">
       <AudioLevelMeter 
         :level="voiceEngine?.rxLevel || 0" 
         label="RX"
@@ -343,22 +358,22 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
     </div>
 
     <!-- Receive Gain Control -->
-    <div v-if="voiceStore.callsign && voiceStore.selectedModule" class="flex flex-col gap-2 px-2">
+    <div v-if="voiceStore.callsign && voiceStore.selectedModule" class="flex flex-col gap-1.5">
       <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <label for="rx-gain" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+        <div class="flex items-center gap-1.5">
+          <label for="rx-gain" class="text-xs font-medium text-gray-700 dark:text-gray-300">
             Receive Volume
           </label>
           <!-- Color indicator dot -->
           <span :class="['w-2 h-2 rounded-full', gainColor]"></span>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5">
           <input
             id="auto-gain"
             type="checkbox"
             :checked="voiceStore.autoGainControl"
             @change="voiceStore.setAutoGainControl(($event.target as HTMLInputElement).checked)"
-            class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+            class="w-3.5 h-3.5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
           />
           <label for="auto-gain" class="text-xs text-gray-600 dark:text-gray-400 cursor-pointer">
             Auto
@@ -374,7 +389,7 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
         :value="voiceStore.receiveGain"
         :disabled="voiceStore.autoGainControl"
         @input="voiceStore.setReceiveGain(parseInt(($event.target as HTMLInputElement).value))"
-        class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+        class="w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
       />
       <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400">
         <span>|</span>
@@ -386,7 +401,7 @@ watch([() => voiceStore.callsign, () => voiceStore.selectedModule], ([cs, mod]) 
     </div>
 
     <!-- Data Usage Indicator -->
-    <div v-if="voiceStore.callsign && voiceStore.selectedModule && voiceEngine?.isConnected" class="px-2">
+    <div v-if="voiceStore.callsign && voiceStore.selectedModule && voiceEngine?.isConnected">
       <DataUsageIndicator :get-data-usage="() => voiceEngine?.getDataUsage() || {
         bytesReceived: 0,
         bytesSent: 0,
